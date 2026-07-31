@@ -1,0 +1,160 @@
+{
+  "build_id": "development-fixture-v1",
+  "countries": [
+    {
+      "code": "AT",
+      "coverage_limitations": "Not production data; import official cached source before release.",
+      "covered_years": [
+        2015,
+        2024
+      ],
+      "provider": "Development fixture; see sources.yaml",
+      "record_count_per_category": 100
+    },
+    {
+      "code": "AU",
+      "coverage_limitations": "Not production data; import official cached source before release.",
+      "covered_years": [
+        2015,
+        2024
+      ],
+      "provider": "Development fixture; see sources.yaml",
+      "record_count_per_category": 100
+    },
+    {
+      "code": "BE",
+      "coverage_limitations": "Not production data; import official cached source before release.",
+      "covered_years": [
+        2015,
+        2024
+      ],
+      "provider": "Development fixture; see sources.yaml",
+      "record_count_per_category": 100
+    },
+    {
+      "code": "CA",
+      "coverage_limitations": "Not production data; import official cached source before release.",
+      "covered_years": [
+        2015,
+        2024
+      ],
+      "provider": "Development fixture; see sources.yaml",
+      "record_count_per_category": 100
+    },
+    {
+      "code": "DE",
+      "coverage_limitations": "Not production data; import official cached source before release.",
+      "covered_years": [
+        2015,
+        2024
+      ],
+      "provider": "Development fixture; see sources.yaml",
+      "record_count_per_category": 100
+    },
+    {
+      "code": "DK",
+      "coverage_limitations": "Not production data; import official cached source before release.",
+      "covered_years": [
+        2015,
+        2024
+      ],
+      "provider": "Development fixture; see sources.yaml",
+      "record_count_per_category": 100
+    },
+    {
+      "code": "ES",
+      "coverage_limitations": "Not production data; import official cached source before release.",
+      "covered_years": [
+        2015,
+        2024
+      ],
+      "provider": "Development fixture; see sources.yaml",
+      "record_count_per_category": 100
+    },
+    {
+      "code": "FR",
+      "coverage_limitations": "Not production data; import official cached source before release.",
+      "covered_years": [
+        2015,
+        2024
+      ],
+      "provider": "Development fixture; see sources.yaml",
+      "record_count_per_category": 100
+    },
+    {
+      "code": "GB",
+      "coverage_limitations": "Not production data; import official cached source before release.",
+      "covered_years": [
+        2015,
+        2024
+      ],
+      "provider": "Development fixture; see sources.yaml",
+      "record_count_per_category": 100
+    },
+    {
+      "code": "IE",
+      "coverage_limitations": "Not production data; import official cached source before release.",
+      "covered_years": [
+        2015,
+        2024
+      ],
+      "provider": "Development fixture; see sources.yaml",
+      "record_count_per_category": 100
+    },
+    {
+      "code": "IT",
+      "coverage_limitations": "Not production data; import official cached source before release.",
+      "covered_years": [
+        2015,
+        2024
+      ],
+      "provider": "Development fixture; see sources.yaml",
+      "record_count_per_category": 100
+    },
+    {
+      "code": "NL",
+      "coverage_limitations": "Not production data; import official cached source before release.",
+      "covered_years": [
+        2015,
+        2024
+      ],
+      "provider": "Development fixture; see sources.yaml",
+      "record_count_per_category": 100
+    },
+    {
+      "code": "NO",
+      "coverage_limitations": "Not production data; import official cached source before release.",
+      "covered_years": [
+        2015,
+        2024
+      ],
+      "provider": "Development fixture; see sources.yaml",
+      "record_count_per_category": 100
+    },
+    {
+      "code": "SE",
+      "coverage_limitations": "Not production data; import official cached source before release.",
+      "covered_years": [
+        2015,
+        2024
+      ],
+      "provider": "Development fixture; see sources.yaml",
+      "record_count_per_category": 100
+    },
+    {
+      "code": "US",
+      "coverage_limitations": "Not production data; import official cached source before release.",
+      "covered_years": [
+        2015,
+        2024
+      ],
+      "provider": "Development fixture; see sources.yaml",
+      "record_count_per_category": 100
+    }
+  ],
+  "development_fixture_only": true,
+  "generated_at": "2026-07-31T00:00:00Z",
+  "redistribution_review_required": true,
+  "schema_version": 1,
+  "sqlite_sha256": "11e12cb75298ebe9a624b6ba83227c87f264e7505ac93dc0e476d368e730d34b"
+}

@@ -1,0 +1,107 @@
+# Build-time sources only. No source is contacted by the installed app.
+- country_code: US
+  provider: Social Security Administration
+  source_url: https://www.ssa.gov/oact/babynames/limits.html
+  adapter: ssa_us
+  expected_format: zip_csv
+  enabled: true
+  license_status: review_before_release
+  notes: Names below the source privacy threshold are omitted.
+- country_code: CA
+  provider: Statistics Canada
+  source_url: https://www150.statcan.gc.ca/
+  adapter: official_ranking
+  expected_format: csv_or_xlsx
+  enabled: true
+  license_status: review_before_release
+- country_code: BE
+  provider: Statbel
+  source_url: https://statbel.fgov.be/
+  adapter: official_ranking
+  expected_format: csv
+  enabled: true
+  license_status: review_before_release
+- country_code: NL
+  provider: Sociale Verzekeringsbank
+  source_url: https://www.svb.nl/
+  adapter: official_ranking
+  expected_format: html_or_csv
+  enabled: true
+  license_status: review_before_release
+- country_code: DK
+  provider: Statistics Denmark
+  source_url: https://www.statbank.dk/
+  adapter: official_ranking
+  expected_format: csv
+  enabled: true
+  license_status: review_before_release
+- country_code: NO
+  provider: Statistics Norway
+  source_url: https://www.ssb.no/
+  adapter: official_ranking
+  expected_format: api_csv
+  enabled: true
+  license_status: review_before_release
+- country_code: SE
+  provider: Statistics Sweden
+  source_url: https://www.scb.se/
+  adapter: official_ranking
+  expected_format: xlsx
+  enabled: true
+  license_status: review_before_release
+- country_code: DE
+  provider: Gesellschaft für deutsche Sprache
+  source_url: https://gfds.de/
+  adapter: documented_fallback
+  expected_format: html
+  enabled: true
+  license_status: review_before_release
+- country_code: FR
+  provider: INSEE
+  source_url: https://www.insee.fr/fr/statistiques/2540004
+  adapter: insee_fr
+  expected_format: zip_csv
+  enabled: true
+  license_status: review_before_release
+- country_code: ES
+  provider: Instituto Nacional de Estadística
+  source_url: https://www.ine.es/
+  adapter: official_ranking
+  expected_format: csv
+  enabled: true
+  license_status: review_before_release
+- country_code: IT
+  provider: ISTAT
+  source_url: https://www.istat.it/
+  adapter: official_ranking
+  expected_format: csv
+  enabled: true
+  license_status: review_before_release
+- country_code: AT
+  provider: Statistics Austria
+  source_url: https://www.statistik.at/
+  adapter: official_ranking
+  expected_format: csv
+  enabled: true
+  license_status: review_before_release
+- country_code: GB
+  provider: ONS, NRS, NISRA
+  source_url: https://www.ons.gov.uk/
+  adapter: uk_aggregate
+  expected_format: csv
+  enabled: true
+  license_status: review_before_release
+- country_code: IE
+  provider: Central Statistics Office
+  source_url: https://www.cso.ie/
+  adapter: official_ranking
+  expected_format: csv
+  enabled: true
+  license_status: review_before_release
+- country_code: AU
+  provider: State and territory birth registries
+  source_url: https://www.abs.gov.au/
+  adapter: au_aggregate
+  expected_format: csv
+  enabled: true
+  license_status: review_before_release
