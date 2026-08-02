@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:name_that_baby/core/qr_protocol.dart';
 
@@ -39,7 +41,7 @@ void main() {
 
   test('invite round trip validates protocol framing', () {
     final encoded = QrProtocol.encodeInvite({
-      'v': 1,
+      'v': QrProtocol.version,
       'type': 'invite',
       'session': 'test',
     });
@@ -54,6 +56,7 @@ void main() {
     final packet = await QrProtocol.encrypt(
       secret: secret,
       sessionId: 'session',
+      sourceParticipantId: 'partner-a',
       eventType: 'choosing_votes',
       sequence: 1,
       payload: {
@@ -66,10 +69,61 @@ void main() {
       encoded: packet,
     );
     expect(decoded['type'], 'choosing_votes');
+    expect(decoded['source'], 'partner-a');
     expect((decoded['payload'] as Map<String, Object?>)['votes'], {'1': 'yes'});
     await expectLater(
       QrProtocol.decrypt(secret: secret, sessionId: 'other', encoded: packet),
       throwsA(isA<QrProtocolError>()),
     );
+  });
+
+  test('a version-one invite asks the user to renew pairing', () {
+    final encoded = QrProtocol.encodeInvite({
+      'v': 1,
+      'type': 'invite',
+      'session': 'legacy',
+    });
+    expect(
+      () => QrProtocol.decodeInvite(encoded),
+      throwsA(isA<QrProtocolError>()),
+    );
+  });
+
+  test('changing an authenticated sender identifier is rejected', () async {
+    final packet = await QrProtocol.encrypt(
+      secret: secret,
+      sessionId: 'session',
+      sourceParticipantId: 'partner-a',
+      eventType: 'choosing_votes',
+      sequence: 1,
+      payload: const {'votes': {}},
+    );
+    final decoded = jsonDecode(utf8.decode(base64Url.decode(packet))) as Map;
+    decoded['source'] = 'partner-b';
+    final altered = base64Url.encode(utf8.encode(jsonEncode(decoded)));
+
+    await expectLater(
+      QrProtocol.decrypt(
+        secret: secret,
+        sessionId: 'session',
+        encoded: altered,
+      ),
+      throwsA(isA<QrProtocolError>()),
+    );
+  });
+
+  test('confirmation code is shared regardless of participant order', () async {
+    final first = await QrProtocol.confirmationCode(
+      secret: secret,
+      firstParticipantId: 'a',
+      secondParticipantId: 'b',
+    );
+    final second = await QrProtocol.confirmationCode(
+      secret: secret,
+      firstParticipantId: 'b',
+      secondParticipantId: 'a',
+    );
+    expect(first, second);
+    expect(first, hasLength(6));
   });
 }

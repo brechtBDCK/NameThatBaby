@@ -1,5 +1,6 @@
 {
-  "build_id": "development-fixture-v1",
+  "build_id": "official-es-fr-plus-fixtures",
+  "contains_fixture_coverage": true,
   "countries": [
     {
       "code": "AT",
@@ -63,23 +64,29 @@
     },
     {
       "code": "ES",
-      "coverage_limitations": "Not production data; import official cached source before release.",
+      "coverage_limitations": "Raw archive imported; redistribution licensing remains under review.",
       "covered_years": [
         2015,
         2024
       ],
-      "provider": "Development fixture; see sources.yaml",
-      "record_count_per_category": 100
+      "provider": "Instituto Nacional de Estad\u00edstica",
+      "record_count_per_category": {
+        "boy": 1000,
+        "girl": 1000
+      }
     },
     {
       "code": "FR",
-      "coverage_limitations": "Not production data; import official cached source before release.",
+      "coverage_limitations": "Raw archive imported; redistribution licensing remains under review.",
       "covered_years": [
         2015,
         2024
       ],
-      "provider": "Development fixture; see sources.yaml",
-      "record_count_per_category": 100
+      "provider": "INSEE",
+      "record_count_per_category": {
+        "boy": 70227,
+        "girl": 78358
+      }
     },
     {
       "code": "GB",
@@ -152,9 +159,9 @@
       "record_count_per_category": 100
     }
   ],
-  "development_fixture_only": true,
-  "generated_at": "2026-07-31T00:00:00Z",
+  "development_fixture_only": false,
+  "generated_at": "2026-08-02T00:00:00Z",
   "redistribution_review_required": true,
   "schema_version": 1,
-  "sqlite_sha256": "11e12cb75298ebe9a624b6ba83227c87f264e7505ac93dc0e476d368e730d34b"
+  "sqlite_sha256": "e91e1fa7671c3a70582fcce9859ea34500526b5026085a8fdc15d8373b69b0a3"
 }

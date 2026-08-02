@@ -1,5 +1,5 @@
 # Privacy
 
-There is no account, server, analytics, advertising, remote config, or runtime network permission. Bundled name assets work offline. Session configuration and votes are persisted locally; the session secret is stored through the secure-storage plugin. Android backups and device-transfer extraction are disabled in the production manifest. Session deletion removes the persisted state and secure key.
+There is no account, server, analytics, advertising, remote config, or runtime network permission. Bundled name assets work offline. Session configuration and votes are AES-256-GCM encrypted in a local SQLite database; the separate encryption key and session secret are stored through the secure-storage plugin. Android backups and device-transfer extraction are disabled in the production manifest. Session deletion removes the encrypted record and both locally stored keys.
 
-The current mutable session data is stored in preferences rather than an encrypted SQLite database; moving it to encrypted local SQLite, adding explicit iOS file-backup exclusion, and a real-device security review remain release blockers. The app does not log QR payloads, choices, or secrets.
+Existing preference records are read once, re-encrypted into SQLite, and deleted. Secure-storage keys explicitly opt out of iCloud Keychain synchronization. The iOS native shell marks the local session database as excluded from backup; a real-device security review remains a release blocker. The app does not log QR payloads, choices, or secrets.

@@ -58,18 +58,20 @@
   license_status: review_before_release
 - country_code: FR
   provider: INSEE
-  source_url: https://www.insee.fr/fr/statistiques/2540004
+  source_url: https://www.insee.fr/fr/statistiques/8894961
   adapter: insee_fr
-  expected_format: zip_csv
+  expected_format: zip_semicolon_csv
   enabled: true
   license_status: review_before_release
+  notes: National civil-registration file through 2024; values are rounded to the nearest five.
 - country_code: ES
   provider: Instituto Nacional de Estadística
-  source_url: https://www.ine.es/
-  adapter: official_ranking
-  expected_format: csv
+  source_url: https://www.ine.es/dyngs/INEbase/es/operacion.htm?c=Estadistica_C&cid=1254736177009&idp=1254735572981&menu=resultados&secc=1254736195453
+  adapter: ine_es
+  expected_format: annual_xlsx
   enabled: true
   license_status: review_before_release
+  notes: National top-100 newborn rankings, one workbook per year (2015-2024).
 - country_code: IT
   provider: ISTAT
   source_url: https://www.istat.it/

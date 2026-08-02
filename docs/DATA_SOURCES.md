@@ -2,11 +2,11 @@
 
 | Codes | Intended provider | Status |
 | --- | --- | --- |
-| US | Social Security Administration | Fixture pending official import |
+| US | Social Security Administration | Adapter implemented; fixture remains until the official archive is cached locally |
 | CA | Statistics Canada | Fixture pending official import |
 | BE, NL, DK, NO, SE, AT, IE | National statistics/civil sources | Fixture pending official import |
-| FR | INSEE | Fixture pending official import |
-| ES | Instituto Nacional de Estadística | Fixture pending official import |
+| FR | INSEE | Official national CSV imported: 2015–2024; redistribution review remains required |
+| ES | Instituto Nacional de Estadística | Official national newborn rankings imported: 2015–2024; redistribution review remains required |
 | IT | ISTAT | Fixture pending official import |
 | GB | ONS + NRS + NISRA aggregated equally by constituent list | Fixture pending official import |
 | AU | State/territory lists aggregated equally by state list | Fixture pending official import |

@@ -1,14 +1,31 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
 import 'core/domain.dart';
+import 'core/qr_frames.dart';
 import 'core/qr_protocol.dart';
 import 'core/session_store.dart';
+import 'data/bundled_name_repository.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  final store = SessionStore();
+  final manifest =
+      (jsonDecode(await rootBundle.loadString('assets/data/manifest.json'))
+              as Map)
+          .cast<String, Object?>();
+  final repository = BundledNameRepository();
+  final store = SessionStore(
+    datasetHash: manifest['sqlite_sha256']! as String,
+    candidateLoader: (countries, categories, seed) => repository.candidatePool(
+      countries: countries,
+      categories: categories,
+      seed: seed,
+    ),
+  );
   await store.restore();
   runApp(NameThatBaby(store: store));
 }
@@ -53,6 +70,8 @@ enum AppPage {
   setup,
   invite,
   scan,
+  pairAccept,
+  scanPairAccept,
   scanUpdate,
   home,
   choosing,
@@ -62,6 +81,8 @@ enum AppPage {
   faceoff,
   results,
   privacy,
+  dataSources,
+  recovery,
 }
 
 class AppShell extends StatefulWidget {
@@ -72,7 +93,11 @@ class AppShell extends StatefulWidget {
 }
 
 class _AppShellState extends State<AppShell> {
-  late AppPage page = widget.store.hasSession ? AppPage.home : AppPage.welcome;
+  late AppPage page = widget.store.restoreError != null
+      ? AppPage.recovery
+      : widget.store.hasSession
+      ? AppPage.home
+      : AppPage.welcome;
   void go(AppPage value) => setState(() => page = value);
   @override
   Widget build(BuildContext context) {
@@ -92,12 +117,24 @@ class _AppShellState extends State<AppShell> {
           },
         );
       case AppPage.invite:
-        return Invite(store: widget.store, done: () => go(AppPage.home));
+        return Invite(
+          store: widget.store,
+          done: () => go(AppPage.home),
+          scanAcceptance: () => go(AppPage.scanPairAccept),
+        );
       case AppPage.scan:
         return ScanInvite(
           store: widget.store,
-          done: () => go(AppPage.home),
+          done: () => go(AppPage.pairAccept),
           back: () => go(AppPage.welcome),
+        );
+      case AppPage.pairAccept:
+        return PairAccept(store: widget.store, done: () => go(AppPage.home));
+      case AppPage.scanPairAccept:
+        return ScanPairAccept(
+          store: widget.store,
+          done: () => go(AppPage.home),
+          back: () => go(AppPage.invite),
         );
       case AppPage.scanUpdate:
         return ScanUpdate(
@@ -123,19 +160,29 @@ class _AppShellState extends State<AppShell> {
         return Shortlist(
           store: widget.store,
           custom: () => go(AppPage.custom),
-          faceoff: () => go(AppPage.faceoff),
+          faceoff: () {
+            widget.store.startFaceoff();
+            go(AppPage.faceoff);
+          },
         );
       case AppPage.custom:
         return CustomNames(
           store: widget.store,
-          done: () => go(AppPage.faceoff),
+          done: () {
+            widget.store.startFaceoff();
+            go(AppPage.faceoff);
+          },
         );
       case AppPage.faceoff:
         return Faceoff(store: widget.store, done: () => go(AppPage.results));
       case AppPage.results:
-        return Results(home: () => go(AppPage.home));
+        return Results(store: widget.store, home: () => go(AppPage.home));
       case AppPage.privacy:
         return Privacy(store: widget.store, back: () => go(AppPage.home));
+      case AppPage.dataSources:
+        return DataSources(back: () => go(AppPage.home));
+      case AppPage.recovery:
+        return Recovery(store: widget.store, done: () => go(AppPage.welcome));
     }
   }
 }
@@ -157,12 +204,105 @@ class Shell extends StatelessWidget {
             ),
           ),
     body: SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(24, 20, 24, 16),
-        child: child,
+      child: Stack(
+        children: [
+          const Positioned(
+            top: -10,
+            left: -8,
+            child: ExcludeSemantics(
+              child: IgnorePointer(child: BotanicalSprig(flip: false)),
+            ),
+          ),
+          const Positioned(
+            right: -8,
+            bottom: -10,
+            child: ExcludeSemantics(
+              child: IgnorePointer(child: BotanicalSprig(flip: true)),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(24, 20, 24, 16),
+            child: child,
+          ),
+        ],
       ),
     ),
   );
+}
+
+class BotanicalSprig extends StatelessWidget {
+  const BotanicalSprig({super.key, required this.flip});
+  final bool flip;
+
+  @override
+  Widget build(BuildContext context) => Transform(
+    alignment: Alignment.center,
+    transform: Matrix4.diagonal3Values(flip ? -1 : 1, flip ? -1 : 1, 1),
+    child: CustomPaint(size: const Size(128, 128), painter: _SprigPainter()),
+  );
+}
+
+Widget scannerError(
+  BuildContext context,
+  MobileScannerException error,
+) => Center(
+  child: Padding(
+    padding: const EdgeInsets.all(24),
+    child: Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        const Icon(
+          Icons.no_photography_outlined,
+          size: 48,
+          color: Palette.terra,
+        ),
+        const SizedBox(height: 12),
+        Text(
+          error.errorCode == MobileScannerErrorCode.permissionDenied
+              ? 'Camera access is turned off. Enable camera access for NameThatBaby in your phone settings, then try again.'
+              : 'The camera scanner is unavailable. Close this screen and try again.',
+          textAlign: TextAlign.center,
+        ),
+      ],
+    ),
+  ),
+);
+
+class _SprigPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final stem = Paint()
+      ..color = Palette.forest.withValues(alpha: 0.55)
+      ..strokeWidth = 3
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round;
+    final leaf = Paint()..color = Palette.forest.withValues(alpha: 0.5);
+    final berry = Paint()..color = Palette.gold.withValues(alpha: 0.7);
+    final path = Path()
+      ..moveTo(-4, size.height + 4)
+      ..quadraticBezierTo(50, 66, 112, 12);
+    canvas.drawPath(path, stem);
+    for (final point in <Offset>[
+      const Offset(24, 88),
+      const Offset(48, 64),
+      const Offset(72, 42),
+      const Offset(94, 25),
+    ]) {
+      canvas.save();
+      canvas.translate(point.dx, point.dy);
+      canvas.rotate(-0.7);
+      canvas.drawOval(
+        Rect.fromCenter(center: Offset.zero, width: 14, height: 30),
+        leaf,
+      );
+      canvas.restore();
+    }
+    canvas.drawCircle(const Offset(80, 34), 5, berry);
+    canvas.drawCircle(const Offset(101, 16), 4, berry);
+  }
+
+  @override
+  bool shouldRepaint(covariant _SprigPainter oldDelegate) => false;
 }
 
 class Welcome extends StatelessWidget {
@@ -278,9 +418,14 @@ class Setup extends StatelessWidget {
 }
 
 class Invite extends StatelessWidget {
-  const Invite({super.key, required this.store, required this.done});
+  const Invite({
+    super.key,
+    required this.store,
+    required this.done,
+    required this.scanAcceptance,
+  });
   final SessionStore store;
-  final VoidCallback done;
+  final VoidCallback done, scanAcceptance;
   @override
   Widget build(BuildContext context) => Shell(
     child: Center(
@@ -323,9 +468,134 @@ class Invite extends StatelessWidget {
             style: const TextStyle(fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 22),
+          OutlinedButton.icon(
+            onPressed: scanAcceptance,
+            icon: const Icon(Icons.qr_code_scanner),
+            label: const Text('Scan partner confirmation'),
+          ),
+          const SizedBox(height: 8),
           FilledButton(onPressed: done, child: const Text('Continue choosing')),
         ],
       ),
+    ),
+  );
+}
+
+class PairAccept extends StatefulWidget {
+  const PairAccept({super.key, required this.store, required this.done});
+  final SessionStore store;
+  final VoidCallback done;
+
+  @override
+  State<PairAccept> createState() => _PairAcceptState();
+}
+
+class _PairAcceptState extends State<PairAccept> {
+  late final Future<String> packet = widget.store.pairAcceptPayload();
+
+  @override
+  Widget build(BuildContext context) => Shell(
+    child: FutureBuilder<String>(
+      future: packet,
+      builder: (context, snapshot) {
+        if (!snapshot.hasData) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        return ListView(
+          shrinkWrap: true,
+          children: [
+            Text(
+              'Confirm your pairing',
+              textAlign: TextAlign.center,
+              style: Theme.of(
+                context,
+              ).textTheme.headlineMedium!.copyWith(fontWeight: FontWeight.w800),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'Have your partner scan this confirmation code before you start choosing.',
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 20),
+            Container(
+              color: Colors.white,
+              padding: const EdgeInsets.all(16),
+              child: QrImageView(
+                data: snapshot.data!,
+                version: QrVersions.auto,
+              ),
+            ),
+            const SizedBox(height: 20),
+            FilledButton(onPressed: widget.done, child: const Text('Continue')),
+          ],
+        );
+      },
+    ),
+  );
+}
+
+class ScanPairAccept extends StatefulWidget {
+  const ScanPairAccept({
+    super.key,
+    required this.store,
+    required this.done,
+    required this.back,
+  });
+  final SessionStore store;
+  final VoidCallback done, back;
+
+  @override
+  State<ScanPairAccept> createState() => _ScanPairAcceptState();
+}
+
+class _ScanPairAcceptState extends State<ScanPairAccept> {
+  var importing = false;
+  String? error;
+
+  Future<void> scan(BarcodeCapture capture) async {
+    if (importing) return;
+    final value = capture.barcodes.firstOrNull?.rawValue;
+    if (value == null) return;
+    setState(() => importing = true);
+    try {
+      await widget.store.importPairAccept(value);
+      if (mounted) widget.done();
+    } on QrProtocolError catch (exception) {
+      if (mounted) {
+        setState(() {
+          importing = false;
+          error = exception.message;
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => Shell(
+    back: widget.back,
+    child: Column(
+      children: [
+        Text(
+          'Scan partner confirmation',
+          style: Theme.of(
+            context,
+          ).textTheme.headlineMedium!.copyWith(fontWeight: FontWeight.w800),
+        ),
+        const SizedBox(height: 8),
+        const Text('This securely completes your private pairing.'),
+        const SizedBox(height: 18),
+        Expanded(
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(28),
+            child: MobileScanner(onDetect: scan, errorBuilder: scannerError),
+          ),
+        ),
+        if (error != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 12),
+            child: Text(error!, style: const TextStyle(color: Colors.red)),
+          ),
+      ],
     ),
   );
 }
@@ -387,7 +657,7 @@ class _ScanInviteState extends State<ScanInvite> {
         Expanded(
           child: ClipRRect(
             borderRadius: BorderRadius.circular(28),
-            child: MobileScanner(onDetect: scan),
+            child: MobileScanner(onDetect: scan, errorBuilder: scannerError),
           ),
         ),
         if (error != null)
@@ -416,6 +686,7 @@ class ScanUpdate extends StatefulWidget {
 class _ScanUpdateState extends State<ScanUpdate> {
   bool importing = false;
   String? error;
+  final frames = QrFrameCollector();
   Future<void> scan(BarcodeCapture capture) async {
     if (importing) {
       return;
@@ -426,11 +697,28 @@ class _ScanUpdateState extends State<ScanUpdate> {
     }
     setState(() => importing = true);
     try {
-      await widget.store.importVoteUpdate(value);
+      final packet = await frames.add(value);
+      if (packet == null) {
+        if (mounted) {
+          setState(() {
+            importing = false;
+            error = 'Frame scanned. Keep scanning the remaining frames.';
+          });
+        }
+        return;
+      }
+      await widget.store.importVoteUpdate(packet);
       if (mounted) {
         widget.done();
       }
     } on QrProtocolError catch (exception) {
+      if (mounted) {
+        setState(() {
+          importing = false;
+          error = exception.message;
+        });
+      }
+    } on QrFrameError catch (exception) {
       if (mounted) {
         setState(() {
           importing = false;
@@ -457,7 +745,7 @@ class _ScanUpdateState extends State<ScanUpdate> {
         Expanded(
           child: ClipRRect(
             borderRadius: BorderRadius.circular(28),
-            child: MobileScanner(onDetect: scan),
+            child: MobileScanner(onDetect: scan, errorBuilder: scannerError),
           ),
         ),
         if (error != null)
@@ -526,9 +814,42 @@ class Home extends StatelessWidget {
             child: const Text('Synchronize choices'),
           ),
         ListTile(
+          leading: Icon(
+            store.hasPartner ? Icons.people_alt_outlined : Icons.qr_code_2,
+          ),
+          title: Text(
+            store.hasPartner ? 'Partner paired' : 'Waiting for partner',
+          ),
+          subtitle: Text(
+            store.hasPartner
+                ? 'Exchange encrypted codes when you are ready.'
+                : 'Show your pairing code to connect privately.',
+          ),
+          onTap: store.hasPartner ? null : () => go(AppPage.invite),
+        ),
+        if (store.hasPartner)
+          FutureBuilder<String?>(
+            future: store.confirmationCode(),
+            builder: (context, snapshot) => ListTile(
+              leading: const Icon(Icons.verified_user_outlined),
+              title: const Text('Pairing confirmation'),
+              subtitle: Text(
+                snapshot.hasData
+                    ? 'Check that both phones show ${snapshot.data}.'
+                    : 'Loading confirmation code…',
+              ),
+            ),
+          ),
+        ListTile(
           leading: const Icon(Icons.shield_outlined),
           title: const Text('Private & offline'),
           onTap: () => go(AppPage.privacy),
+        ),
+        ListTile(
+          leading: const Icon(Icons.storage_outlined),
+          title: const Text('Name data & coverage'),
+          subtitle: const Text('Bundled sources on this device'),
+          onTap: () => go(AppPage.dataSources),
         ),
       ],
     ),
@@ -569,23 +890,40 @@ class Choosing extends StatelessWidget {
           Text('${store.remaining(candidate.category).length} names left'),
           const SizedBox(height: 16),
           Expanded(
-            child: Card(
-              color: Palette.surface,
-              child: Center(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(Icons.spa, color: Palette.forest),
-                    const SizedBox(height: 16),
-                    Text(
-                      candidate.name,
-                      style: Theme.of(context).textTheme.displayLarge!.copyWith(
-                        fontWeight: FontWeight.w800,
-                      ),
+            child: GestureDetector(
+              onHorizontalDragEnd: (details) {
+                final velocity = details.primaryVelocity ?? 0;
+                if (velocity.abs() < 350) return;
+                HapticFeedback.selectionClick();
+                store.vote(velocity < 0 ? VoteValue.no : VoteValue.yes);
+              },
+              onVerticalDragEnd: (details) {
+                final velocity = details.primaryVelocity ?? 0;
+                if (velocity > -350) return;
+                HapticFeedback.selectionClick();
+                store.vote(VoteValue.maybe);
+              },
+              child: Semantics(
+                label:
+                    '${candidate.name}, ${candidate.category == NameCategory.girls ? 'girls' : 'boys'}, ${store.remaining(candidate.category).length} names remaining. Swipe left for No, up for Maybe, or right for Yes.',
+                child: Card(
+                  color: Palette.surface,
+                  child: Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.spa, color: Palette.forest),
+                        const SizedBox(height: 16),
+                        Text(
+                          candidate.name,
+                          style: Theme.of(context).textTheme.displayLarge!
+                              .copyWith(fontWeight: FontWeight.w800),
+                        ),
+                        const SizedBox(height: 16),
+                        Text(candidate.countries.join(' · ')),
+                      ],
                     ),
-                    const SizedBox(height: 16),
-                    Text(candidate.countries.join(' · ')),
-                  ],
+                  ),
                 ),
               ),
             ),
@@ -671,14 +1009,19 @@ class SyncVotes extends StatefulWidget {
 }
 
 class _SyncVotesState extends State<SyncVotes> {
-  String? packet;
+  List<String>? frames;
+  var frameIndex = 0;
   String? error;
   Future<void> make() async {
     try {
-      setState(() => packet = null);
+      setState(() {
+        frames = null;
+        frameIndex = 0;
+      });
       final value = await widget.store.voteUpdatePayload();
+      final framed = await QrFrameCodec.frame(value);
       if (mounted) {
-        setState(() => packet = value);
+        setState(() => frames = framed);
       }
     } on Object catch (_) {
       if (mounted) {
@@ -702,12 +1045,28 @@ class _SyncVotesState extends State<SyncVotes> {
         ),
         const SizedBox(height: 16),
         FilledButton(onPressed: make, child: const Text('Create my vote code')),
-        if (packet != null)
+        if (frames != null)
           Container(
             color: Colors.white,
             margin: const EdgeInsets.symmetric(vertical: 16),
             padding: const EdgeInsets.all(16),
-            child: QrImageView(data: packet!, version: QrVersions.auto),
+            child: QrImageView(
+              data: frames![frameIndex],
+              version: QrVersions.auto,
+            ),
+          ),
+        if ((frames?.length ?? 0) > 1)
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text('Frame ${frameIndex + 1} of ${frames!.length}'),
+              TextButton(
+                onPressed: () => setState(
+                  () => frameIndex = (frameIndex + 1) % frames!.length,
+                ),
+                child: const Text('Next frame'),
+              ),
+            ],
           ),
         OutlinedButton(
           onPressed: widget.scan,
@@ -810,7 +1169,7 @@ class CustomNames extends StatefulWidget {
 
 class _CustomNamesState extends State<CustomNames> {
   final controller = TextEditingController();
-  var girls = true;
+  final selected = <NameCategory>{NameCategory.girls};
   var error = '';
   @override
   void dispose() {
@@ -837,16 +1196,33 @@ class _CustomNamesState extends State<CustomNames> {
             errorText: error.isEmpty ? null : error,
           ),
         ),
-        SwitchListTile(
-          value: girls,
-          onChanged: (value) => setState(() => girls = value),
-          title: Text(girls ? 'Girls' : 'Boys'),
+        const Text('Add to'),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 8,
+          children: NameCategory.values
+              .map(
+                (category) => FilterChip(
+                  label: Text(
+                    category == NameCategory.girls ? 'Girls' : 'Boys',
+                  ),
+                  selected: selected.contains(category),
+                  onSelected: (value) {
+                    if (!value && selected.length == 1) return;
+                    setState(() {
+                      value
+                          ? selected.add(category)
+                          : selected.remove(category);
+                    });
+                  },
+                ),
+              )
+              .toList(),
         ),
+        const SizedBox(height: 12),
         FilledButton(
           onPressed: () {
-            if (widget.store.addCustom(controller.text, {
-              girls ? NameCategory.girls : NameCategory.boys,
-            })) {
+            if (widget.store.addCustom(controller.text, selected)) {
               controller.clear();
               setState(() => error = '');
             } else {
@@ -875,39 +1251,81 @@ class Faceoff extends StatelessWidget {
   final VoidCallback done;
   @override
   Widget build(BuildContext context) {
-    const entries = ['Elena', 'Nora', 'Leo', 'Arthur'];
-    final left = entries[store.faceoffIndex % entries.length];
-    final right = entries[(store.faceoffIndex + 1) % entries.length];
-    void choose() {
-      store.advanceFaceoff();
-      if (store.faceoffIndex >= 6) done();
+    if (store.faceoffDone) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => done());
+    }
+    if (store.faceoffRoundReady) {
+      return FaceoffRoundSync(store: store, done: done);
+    }
+    final pairing = store.currentFaceoff;
+    final category = store.faceoffCategory;
+    if (pairing == null || category == null) {
+      return Shell(
+        child: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.list_alt, size: 64, color: Palette.gold),
+              const SizedBox(height: 12),
+              const Text(
+                'Add at least two shared names',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 8),
+              const Text('Face-off needs two names in the same list.'),
+              const SizedBox(height: 20),
+              FilledButton(onPressed: done, child: const Text('View results')),
+            ],
+          ),
+        ),
+      );
     }
 
     return Shell(
       child: Column(
         children: [
           Text(
-            'Face-off · round ${store.faceoffIndex ~/ 2 + 1}',
+            store.faceoffTieBreakActive
+                ? 'Face-off · targeted tie-break'
+                : 'Face-off · round ${store.faceoffRound + 1} of ${SessionStore.faceoffRoundCount}',
             style: Theme.of(
               context,
             ).textTheme.headlineSmall!.copyWith(fontWeight: FontWeight.w800),
           ),
-          const Text('Disagreements keep both names in contention.'),
+          Text(
+            '${category == NameCategory.girls ? 'Girls' : 'Boys'} · pairing ${store.faceoffPairIndex + 1} of ${store.faceoffPairings.length}',
+          ),
+          const SizedBox(height: 8),
+          const Text('Choose the name you both prefer, or skip if undecided.'),
           const Spacer(),
           Row(
             children: [
               Expanded(
-                child: ChoiceCard(name: left, onTap: choose),
+                child: ChoiceCard(
+                  name: pairing.left,
+                  onTap: () => store.chooseFaceoff(pairing.left),
+                ),
               ),
               const Padding(padding: EdgeInsets.all(12), child: Text('or')),
               Expanded(
-                child: ChoiceCard(name: right, onTap: choose),
+                child: ChoiceCard(
+                  name: pairing.right,
+                  onTap: () => store.chooseFaceoff(pairing.right),
+                ),
               ),
             ],
           ),
           const Spacer(),
+          TextButton.icon(
+            onPressed: store.faceoffVoteHistory.isEmpty
+                ? null
+                : store.undoFaceoffVote,
+            icon: const Icon(Icons.undo),
+            label: const Text('Undo my last choice'),
+          ),
           OutlinedButton.icon(
-            onPressed: choose,
+            onPressed: () => store.chooseFaceoff(null),
             icon: const Icon(Icons.skip_next),
             label: const Text('Skip this pairing'),
           ),
@@ -915,6 +1333,150 @@ class Faceoff extends StatelessWidget {
       ),
     );
   }
+}
+
+class FaceoffRoundSync extends StatefulWidget {
+  const FaceoffRoundSync({super.key, required this.store, required this.done});
+
+  final SessionStore store;
+  final VoidCallback done;
+
+  @override
+  State<FaceoffRoundSync> createState() => _FaceoffRoundSyncState();
+}
+
+class _FaceoffRoundSyncState extends State<FaceoffRoundSync> {
+  List<String>? frames;
+  var frameIndex = 0;
+  String? error;
+  var scanning = false;
+  var importing = false;
+  final collector = QrFrameCollector();
+
+  @override
+  void initState() {
+    super.initState();
+    makePacket();
+  }
+
+  Future<void> makePacket() async {
+    try {
+      final value = await widget.store.faceoffUpdatePayload();
+      final framed = await QrFrameCodec.frame(value);
+      if (mounted) setState(() => frames = framed);
+    } on Object catch (_) {
+      if (mounted) {
+        setState(() => error = 'Unable to create this protected round update.');
+      }
+    }
+  }
+
+  Future<void> scan(BarcodeCapture capture) async {
+    if (importing) return;
+    final value = capture.barcodes.firstOrNull?.rawValue;
+    if (value == null) return;
+    setState(() => importing = true);
+    try {
+      final packet = await collector.add(value);
+      if (packet == null) {
+        if (mounted) {
+          setState(() {
+            importing = false;
+            error = 'Frame scanned. Keep scanning the remaining frames.';
+          });
+        }
+        return;
+      }
+      await widget.store.importFaceoffUpdate(packet);
+      if (mounted) setState(() => scanning = false);
+    } on QrProtocolError catch (exception) {
+      if (mounted) {
+        setState(() {
+          importing = false;
+          error = exception.message;
+        });
+      }
+    } on QrFrameError catch (exception) {
+      if (mounted) {
+        setState(() {
+          importing = false;
+          error = exception.message;
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => Shell(
+    child: ListView(
+      children: [
+        Text(
+          'Round ready to sync',
+          style: Theme.of(
+            context,
+          ).textTheme.headlineMedium!.copyWith(fontWeight: FontWeight.w800),
+        ),
+        const Text(
+          'Your choices stay private until both phones exchange this round.',
+        ),
+        if (frames != null)
+          Container(
+            color: Colors.white,
+            margin: const EdgeInsets.symmetric(vertical: 16),
+            padding: const EdgeInsets.all(16),
+            child: QrImageView(
+              data: frames![frameIndex],
+              version: QrVersions.auto,
+            ),
+          )
+        else
+          const Padding(
+            padding: EdgeInsets.all(32),
+            child: Center(child: CircularProgressIndicator()),
+          ),
+        if ((frames?.length ?? 0) > 1)
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text('Frame ${frameIndex + 1} of ${frames!.length}'),
+              TextButton(
+                onPressed: () => setState(
+                  () => frameIndex = (frameIndex + 1) % frames!.length,
+                ),
+                child: const Text('Next frame'),
+              ),
+            ],
+          ),
+        FilledButton.icon(
+          onPressed: () => setState(() {
+            scanning = !scanning;
+            error = null;
+          }),
+          icon: const Icon(Icons.qr_code_scanner),
+          label: Text(scanning ? 'Close scanner' : 'Scan partner round'),
+        ),
+        if (scanning)
+          SizedBox(
+            height: 300,
+            child: Padding(
+              padding: const EdgeInsets.only(top: 16),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(28),
+                child: MobileScanner(
+                  onDetect: scan,
+                  errorBuilder: scannerError,
+                ),
+              ),
+            ),
+          ),
+        if (error != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 12),
+            child: Text(error!, style: const TextStyle(color: Colors.red)),
+          ),
+      ],
+    ),
+  );
 }
 
 class ChoiceCard extends StatelessWidget {
@@ -940,8 +1502,9 @@ class ChoiceCard extends StatelessWidget {
 }
 
 class Results extends StatelessWidget {
-  const Results({super.key, required this.home});
+  const Results({super.key, required this.home, required this.store});
   final VoidCallback home;
+  final SessionStore store;
   @override
   Widget build(BuildContext context) => Shell(
     child: ListView(
@@ -952,18 +1515,38 @@ class Results extends StatelessWidget {
             context,
           ).textTheme.headlineMedium!.copyWith(fontWeight: FontWeight.w800),
         ),
-        const Text('Face-off scores decide this list.'),
-        ...['Elena', 'Nora', 'Olivia', 'Leo', 'Arthur'].asMap().entries.map(
-          (entry) => Card(
-            child: ListTile(
-              leading: CircleAvatar(
-                backgroundColor: Palette.gold,
-                child: Text('${entry.key + 1}'),
+        const Text('Face-off wins decide each list.'),
+        ...NameCategory.values.where(store.categories.contains).expand((
+          category,
+        ) {
+          final results = store.results(category);
+          return [
+            Padding(
+              padding: const EdgeInsets.only(top: 20, bottom: 8),
+              child: Text(
+                category == NameCategory.girls ? 'Girls' : 'Boys',
+                style: Theme.of(
+                  context,
+                ).textTheme.titleLarge!.copyWith(fontWeight: FontWeight.w800),
               ),
-              title: Text(entry.value),
             ),
-          ),
-        ),
+            if (results.isEmpty) const Text('No shared names yet.'),
+            ...results.asMap().entries.map(
+              (entry) => Card(
+                child: ListTile(
+                  leading: CircleAvatar(
+                    backgroundColor: Palette.gold,
+                    child: Text('${entry.key + 1}'),
+                  ),
+                  title: Text(entry.value.name),
+                  trailing: Text(
+                    '${entry.value.score} ${entry.value.score == 1 ? 'point' : 'points'}',
+                  ),
+                ),
+              ),
+            ),
+          ];
+        }),
         FilledButton(onPressed: home, child: const Text('Back to home')),
       ],
     ),
@@ -997,14 +1580,161 @@ class Privacy extends StatelessWidget {
         ),
         OutlinedButton.icon(
           onPressed: () async {
-            await store.reset();
-            back();
+            final confirmed = await showDialog<bool>(
+              context: context,
+              builder: (context) => AlertDialog(
+                title: const Text('Delete this session?'),
+                content: const Text(
+                  'This removes your choices, matches, Face-off state, and local session key from this phone. This cannot be undone.',
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(context, false),
+                    child: const Text('Keep session'),
+                  ),
+                  FilledButton(
+                    onPressed: () => Navigator.pop(context, true),
+                    child: const Text('Delete session'),
+                  ),
+                ],
+              ),
+            );
+            if (confirmed == true) {
+              await store.reset();
+              back();
+            }
           },
           icon: const Icon(Icons.delete_outline),
           label: const Text('Delete local session'),
         ),
         TextButton(onPressed: back, child: const Text('Back')),
       ],
+    ),
+  );
+}
+
+class DataSources extends StatelessWidget {
+  const DataSources({super.key, required this.back});
+  final VoidCallback back;
+
+  Future<Map<String, Object?>> _manifest() async {
+    final text = await rootBundle.loadString('assets/data/manifest.json');
+    return (jsonDecode(text) as Map).cast<String, Object?>();
+  }
+
+  @override
+  Widget build(BuildContext context) => Shell(
+    back: back,
+    child: FutureBuilder<Map<String, Object?>>(
+      future: _manifest(),
+      builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          return const Center(
+            child: Text('The bundled data manifest could not be read.'),
+          );
+        }
+        if (!snapshot.hasData) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        final manifest = snapshot.data!;
+        final fixture = manifest['contains_fixture_coverage'] == true;
+        final countries = (manifest['countries'] as List).cast<Map>();
+        return ListView(
+          children: [
+            Text(
+              'Name data & coverage',
+              style: Theme.of(
+                context,
+              ).textTheme.headlineMedium!.copyWith(fontWeight: FontWeight.w800),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              fixture
+                  ? 'This build includes some fixture data. It is not ready for release use.'
+                  : 'All listed data is bundled with this app and available offline.',
+            ),
+            const SizedBox(height: 12),
+            ...countries.map((entry) {
+              final country = entry.cast<String, Object?>();
+              final years = (country['covered_years'] as List).join('–');
+              return Card(
+                child: ListTile(
+                  title: Text(country['code']! as String),
+                  subtitle: Text('${country['provider']} · $years'),
+                  trailing: const Icon(Icons.info_outline),
+                ),
+              );
+            }),
+            const SizedBox(height: 8),
+            const Text(
+              'Source licensing and redistribution remain under review.',
+              style: TextStyle(fontStyle: FontStyle.italic),
+            ),
+          ],
+        );
+      },
+    ),
+  );
+}
+
+class Recovery extends StatelessWidget {
+  const Recovery({super.key, required this.store, required this.done});
+  final SessionStore store;
+  final VoidCallback done;
+
+  @override
+  Widget build(BuildContext context) => Shell(
+    child: Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Icon(Icons.error_outline, size: 64, color: Palette.terra),
+          const SizedBox(height: 16),
+          Text(
+            'Session needs recovery',
+            textAlign: TextAlign.center,
+            style: Theme.of(
+              context,
+            ).textTheme.headlineSmall!.copyWith(fontWeight: FontWeight.w800),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            store.restoreError ?? 'The saved session could not be opened.',
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 20),
+          OutlinedButton.icon(
+            onPressed: () async {
+              final confirmed = await showDialog<bool>(
+                context: context,
+                builder: (context) => AlertDialog(
+                  title: const Text('Delete unrecoverable session?'),
+                  content: const Text(
+                    'This removes the local session and its key from this phone. It cannot be undone.',
+                  ),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(context, false),
+                      child: const Text('Cancel'),
+                    ),
+                    FilledButton(
+                      onPressed: () => Navigator.pop(context, true),
+                      child: const Text('Delete session'),
+                    ),
+                  ],
+                ),
+              );
+              if (confirmed == true) {
+                await store.reset();
+                done();
+              }
+            },
+            icon: const Icon(Icons.delete_outline),
+            label: const Text('Delete local session'),
+          ),
+        ],
+      ),
     ),
   );
 }
