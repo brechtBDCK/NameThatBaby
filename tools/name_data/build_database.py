@@ -13,11 +13,24 @@ from adapters.ssa_us import load_decade
 from adapters.insee_fr import load_decade as load_insee_decade
 from adapters.ine_es import load_decade as load_ine_es_decade
 from adapters.statcan_ca import load_decade as load_statcan_ca_decade
+from adapters.ssb_no import load_decade as load_ssb_no_decade
+from adapters.dst_dk import load_decade as load_dst_dk_decade
+from adapters.cso_ie import load_decade as load_cso_ie_decade
+from adapters.stat_at import load_decade as load_stat_at_decade
+from adapters.istat_it import load_decade as load_istat_it_decade
 
 ROOT = Path(__file__).resolve().parents[2]
 OUT = ROOT / 'assets/data'
 COUNTRIES = {'US':'United States','CA':'Canada','BE':'Belgium','NL':'Netherlands','DK':'Denmark','NO':'Norway','SE':'Sweden','DE':'Germany','FR':'France','ES':'Spain','IT':'Italy','AT':'Austria','GB':'United Kingdom','IE':'Ireland','AU':'Australia'}
 NAMES = {'girl':['Elena','Nora','Olivia','Sofia','Amélie','Mila','Clara','Lucia','Iris','Ava'], 'boy':['Leo','Noah','Arthur','Oliver','Luca','Hugo','Felix','Milo','Oscar','Theo']}
+
+
+def raw_checksum(path):
+    digest = hashlib.sha256()
+    for file in ([path] if path.is_file() else sorted(path.iterdir())):
+        digest.update(file.name.encode())
+        digest.update(file.read_bytes())
+    return digest.hexdigest()
 
 
 def insert_observation(conn, name_id, source, name, category, year, count, rank):
@@ -55,10 +68,25 @@ def build():
     es_rows = load_ine_es_decade(es_archive) if es_archive.exists() else None
     ca_archive = ROOT / 'tools/name_data/raw_cache/statcan_ca/17100147-eng.zip'
     ca_rows = load_statcan_ca_decade(ca_archive) if ca_archive.exists() else None
-    official_rows = {'US': us_rows, 'CA': ca_rows, 'FR': fr_rows, 'ES': es_rows}
+    no_archive = ROOT / 'tools/name_data/raw_cache/ssb_no/fornavn_fodte_2015_2024.json'
+    no_rows = load_ssb_no_decade(no_archive) if no_archive.exists() else None
+    dk_archive = ROOT / 'tools/name_data/raw_cache/dst_dk'
+    dk_rows = load_dst_dk_decade(dk_archive) if dk_archive.exists() else None
+    ie_archive = ROOT / 'tools/name_data/raw_cache/cso_ie'
+    ie_rows = load_cso_ie_decade(ie_archive) if ie_archive.exists() else None
+    at_archive = ROOT / 'tools/name_data/raw_cache/stat_at/OGDEXT_VORNAMEN_1.csv'
+    at_rows = load_stat_at_decade(at_archive) if at_archive.exists() else None
+    it_archive = ROOT / 'tools/name_data/raw_cache/istat_it'
+    it_rows = load_istat_it_decade(it_archive) if it_archive.exists() else None
+    official_rows = {'US': us_rows, 'AT': at_rows, 'CA': ca_rows, 'DK': dk_rows, 'FR': fr_rows, 'ES': es_rows, 'IE': ie_rows, 'IT': it_rows, 'NO': no_rows}
     official_metadata = {
         'US': ('US-ssa-national-names', 'Social Security Administration', 'https://www.ssa.gov/oact/babynames/limits.html', archive),
         'CA': ('CA-statcan-first-names', 'Statistics Canada', 'https://www150.statcan.gc.ca/t1/tbl1/en/tv.action?pid=1710014701', ca_archive),
+        'AT': ('AT-statistics-austria-first-names', 'Statistics Austria', 'https://data.statistik.gv.at/data/OGDEXT_VORNAMEN_1.csv', at_archive),
+        'DK': ('DK-dst-newborn-names', 'Statistics Denmark', 'https://www.dst.dk/en/Statistik/emner/borgere/navne/navne-til-nyfoedte', dk_archive),
+        'IE': ('IE-cso-newborn-names', 'Central Statistics Office Ireland', 'https://ws.cso.ie/public/api.restful/PxStat.Data.Cube_API.ReadDataset/VSA50/CSV/1.0/en', ie_archive),
+        'IT': ('IT-istat-newborn-names', 'ISTAT', 'https://www.istat.it/dati/calcolatori/contanomi/', it_archive),
+        'NO': ('NO-ssb-born-names', 'Statistics Norway', 'https://data.ssb.no/api/v0/en/table/FornavnFodte', no_archive),
         'FR': ('FR-insee-national-names', 'INSEE', 'https://www.insee.fr/fr/statistiques/8894961', fr_archive),
         'ES': ('ES-ine-newborn-names', 'Instituto Nacional de Estadística', 'https://www.ine.es/dyngs/INEbase/es/operacion.htm?c=Estadistica_C&cid=1254736177009&idp=1254735572981&menu=resultados&secc=1254736195453', es_archive / 'nomnac24.xlsx'),
     }
@@ -73,7 +101,7 @@ def build():
         if rows is not None:
             source, provider, url, raw = official_metadata[code]
             edition = f'{min(row.year for row in rows)}-{max(row.year for row in rows)}'
-            notes = f'Official national archive; raw SHA-256 {hashlib.sha256(raw.read_bytes()).hexdigest()}.'
+            notes = f'Official national archive; raw SHA-256 {raw_checksum(raw)}.'
         conn.execute('INSERT INTO data_source VALUES (?, ?, ?, ?, ?, ?, ?, ?)', (source, code, provider, url, edition, '2026-08-02', 'review_before_release', notes))
         if rows is not None:
             for row in rows:

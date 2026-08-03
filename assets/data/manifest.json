@@ -1,16 +1,19 @@
 {
-  "build_id": "official-ca-es-fr-plus-fixtures",
+  "build_id": "official-at-ca-dk-es-fr-ie-it-no-plus-fixtures",
   "contains_fixture_coverage": true,
   "countries": [
     {
       "code": "AT",
-      "coverage_limitations": "Not production data; import official cached source before release.",
+      "coverage_limitations": "Raw archive imported; redistribution licensing remains under review.",
       "covered_years": [
         2015,
         2024
       ],
-      "provider": "Development fixture; see sources.yaml",
-      "record_count_per_category": 100
+      "provider": "Statistics Austria",
+      "record_count_per_category": {
+        "boy": 5172,
+        "girl": 5171
+      }
     },
     {
       "code": "AU",
@@ -57,13 +60,16 @@
     },
     {
       "code": "DK",
-      "coverage_limitations": "Not production data; import official cached source before release.",
+      "coverage_limitations": "Raw archive imported; redistribution licensing remains under review.",
       "covered_years": [
         2015,
         2024
       ],
-      "provider": "Development fixture; see sources.yaml",
-      "record_count_per_category": 100
+      "provider": "Statistics Denmark",
+      "record_count_per_category": {
+        "boy": 500,
+        "girl": 500
+      }
     },
     {
       "code": "ES",
@@ -103,23 +109,29 @@
     },
     {
       "code": "IE",
-      "coverage_limitations": "Not production data; import official cached source before release.",
+      "coverage_limitations": "Raw archive imported; redistribution licensing remains under review.",
       "covered_years": [
         2015,
         2024
       ],
-      "provider": "Development fixture; see sources.yaml",
-      "record_count_per_category": 100
+      "provider": "Central Statistics Office Ireland",
+      "record_count_per_category": {
+        "boy": 5260,
+        "girl": 5197
+      }
     },
     {
       "code": "IT",
-      "coverage_limitations": "Not production data; import official cached source before release.",
+      "coverage_limitations": "Raw archive imported; redistribution licensing remains under review.",
       "covered_years": [
         2015,
         2024
       ],
-      "provider": "Development fixture; see sources.yaml",
-      "record_count_per_category": 100
+      "provider": "ISTAT",
+      "record_count_per_category": {
+        "boy": 1000,
+        "girl": 1000
+      }
     },
     {
       "code": "NL",
@@ -133,13 +145,16 @@
     },
     {
       "code": "NO",
-      "coverage_limitations": "Not production data; import official cached source before release.",
+      "coverage_limitations": "Raw archive imported; redistribution licensing remains under review.",
       "covered_years": [
         2015,
         2024
       ],
-      "provider": "Development fixture; see sources.yaml",
-      "record_count_per_category": 100
+      "provider": "Statistics Norway",
+      "record_count_per_category": {
+        "boy": 5198,
+        "girl": 5331
+      }
     },
     {
       "code": "SE",
@@ -166,5 +181,5 @@
   "generated_at": "2026-08-02T00:00:00Z",
   "redistribution_review_required": true,
   "schema_version": 1,
-  "sqlite_sha256": "9d109e6acff173606b5a6cce62301ba51217292cb36d7e8bc333d2cad27a7a1e"
+  "sqlite_sha256": "082d32f9033b17d57d88dd845bcf71ae0830228c4cbde9fda7f4dadb1a81e835"
 }

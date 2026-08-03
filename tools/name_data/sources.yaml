@@ -30,16 +30,17 @@
   license_status: review_before_release
 - country_code: DK
   provider: Statistics Denmark
-  source_url: https://www.statbank.dk/
-  adapter: official_ranking
-  expected_format: csv
+  source_url: https://www.dst.dk/en/Statistik/emner/borgere/navne/navne-til-nyfoedte
+  adapter: dst_dk
+  expected_format: annual_html
   enabled: true
   license_status: review_before_release
+  notes: National annual top-50 newborn rankings; the published list groups spelling variants.
 - country_code: NO
   provider: Statistics Norway
-  source_url: https://www.ssb.no/
-  adapter: official_ranking
-  expected_format: api_csv
+  source_url: https://data.ssb.no/api/v0/en/table/FornavnFodte
+  adapter: ssb_no
+  expected_format: json_stat
   enabled: true
   license_status: review_before_release
 - country_code: SE
@@ -74,18 +75,20 @@
   notes: National top-100 newborn rankings, one workbook per year (2015-2024).
 - country_code: IT
   provider: ISTAT
-  source_url: https://www.istat.it/
-  adapter: official_ranking
-  expected_format: csv
+  source_url: https://www.istat.it/dati/calcolatori/contanomi/
+  adapter: istat_it
+  expected_format: annual_jsonp
   enabled: true
   license_status: review_before_release
+  notes: National rankings are complete through the endpoint's 100-name-per-category historical limit.
 - country_code: AT
   provider: Statistics Austria
-  source_url: https://www.statistik.at/
-  adapter: official_ranking
+  source_url: https://data.statistik.gv.at/data/OGDEXT_VORNAMEN_1.csv
+  adapter: stat_at
   expected_format: csv
   enabled: true
   license_status: review_before_release
+  notes: National ranks are derived from the published district-level birth counts; source normalization groups diacritic variants.
 - country_code: GB
   provider: ONS, NRS, NISRA
   source_url: https://www.ons.gov.uk/
@@ -95,11 +98,12 @@
   license_status: review_before_release
 - country_code: IE
   provider: Central Statistics Office
-  source_url: https://www.cso.ie/
-  adapter: official_ranking
+  source_url: https://ws.cso.ie/public/api.restful/PxStat.Data.Cube_API.ReadDataset/VSA50/CSV/1.0/en
+  adapter: cso_ie
   expected_format: csv
   enabled: true
   license_status: review_before_release
+  notes: National first-name counts and ranks; imports the published top 500 per category/year.
 - country_code: AU
   provider: State and territory birth registries
   source_url: https://www.abs.gov.au/
