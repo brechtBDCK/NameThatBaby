@@ -180,7 +180,7 @@ class SessionStore extends ChangeNotifier {
   }
 
   static const _secretKey = 'namethatbaby.session.secret.v1';
-  static const _stateVersion = 2;
+  static const _stateVersion = 3;
   final SessionSecretStore _secrets;
   late final SessionStateStore _state;
   late final LegacySessionStateStore _legacyState;
@@ -193,6 +193,7 @@ class SessionStore extends ChangeNotifier {
   final List<int> history = [];
   final List<String> customGirls = [];
   final List<String> customBoys = [];
+  final Map<String, String> privateNotes = {};
   List<Candidate> candidates = _candidates();
   int seed = 20260731;
   String sessionId = '';
@@ -201,6 +202,11 @@ class SessionStore extends ChangeNotifier {
   List<int>? _secret;
   bool paired = false;
   bool partnerVotesReceived = false;
+  bool customNamesSent = false;
+  bool partnerCustomNamesReceived = false;
+  bool get customNamesConverged =>
+      !hasPartner || (customNamesSent && partnerCustomNamesReceived);
+  bool get isSaving => _writesPending > 0;
   String? restoreError;
   // Seven is the documented maximum number of comparisons per entry before
   // targeted boundary tie-breaks are needed.
@@ -225,6 +231,9 @@ class SessionStore extends ChangeNotifier {
   final List<String> faceoffVoteHistory = [];
   int outgoingSequence = 0;
   final Set<String> appliedEventIds = {};
+  final Map<String, int> highestAcceptedSequence = {};
+  Future<void> _persistTail = Future.value();
+  int _writesPending = 0;
 
   List<Candidate> get enabled => candidates
       .where((candidate) => categories.contains(candidate.category))
@@ -305,6 +314,13 @@ class SessionStore extends ChangeNotifier {
       customBoys
         ..clear()
         ..addAll((state['customBoys'] as List).cast<String>());
+      privateNotes
+        ..clear()
+        ..addAll(
+          ((state['privateNotes'] as Map?) ?? const {}).map(
+            (key, value) => MapEntry(key as String, value as String),
+          ),
+        );
       seed = state['seed'] as int;
       sessionId = state['sessionId'] as String;
       // State version 1 had no participant identity. Preserve its choices and
@@ -315,12 +331,22 @@ class SessionStore extends ChangeNotifier {
       partnerParticipantId = state['partnerParticipantId'] as String?;
       paired = state['paired'] as bool;
       partnerVotesReceived = state['partnerVotesReceived'] as bool;
+      customNamesSent = state['customNamesSent'] as bool? ?? !hasPartner;
+      partnerCustomNamesReceived =
+          state['partnerCustomNamesReceived'] as bool? ?? !hasPartner;
       _restoreFaceoff(state);
       outgoingSequence = state['outgoingSequence'] as int;
       appliedEventIds
         ..clear()
         ..addAll(
           (state['appliedEventIds'] as List? ?? const []).cast<String>(),
+        );
+      highestAcceptedSequence
+        ..clear()
+        ..addAll(
+          ((state['highestAcceptedSequence'] as Map?) ?? const {}).map(
+            (key, value) => MapEntry(key as String, value as int),
+          ),
         );
       final storedSecret = await _secrets.read(_secretKey);
       if (storedSecret != null) _secret = base64Url.decode(storedSecret);
@@ -371,18 +397,18 @@ class SessionStore extends ChangeNotifier {
     _changed();
   }
 
-  void vote(VoteValue value) {
+  Future<void> vote(VoteValue value) async {
     final candidate = current;
     if (candidate == null) return;
     votes[candidate.id] = value;
     history.add(candidate.id);
-    _changed();
+    await _changed();
   }
 
-  void undo() {
+  Future<void> undo() async {
     if (history.isEmpty) return;
     votes.remove(history.removeLast());
-    _changed();
+    await _changed();
   }
 
   void join() {
@@ -398,9 +424,10 @@ class SessionStore extends ChangeNotifier {
   bool get faceoffStarted => faceoffNames.isNotEmpty;
   bool get canStartFaceoff => faceoffStarted
       ? faceoffNames.values.any((names) => names.length >= 2)
-      : categories.any(
-          (category) => _faceoffEntries(category).names.length >= 2,
-        );
+      : customNamesConverged &&
+            categories.any(
+              (category) => _faceoffEntries(category).names.length >= 2,
+            );
   bool get faceoffDone =>
       faceoffStarted && faceoffCompleted.containsAll(faceoffNames.keys);
   Pairing? get currentFaceoff => faceoffPairIndex < faceoffPairings.length
@@ -415,7 +442,7 @@ class SessionStore extends ChangeNotifier {
       faceoffTieBreakEntries.containsKey(faceoffCategory);
 
   void startFaceoff() {
-    if (faceoffStarted) return;
+    if (faceoffStarted || !customNamesConverged) return;
     for (final category in categories) {
       final entries = _faceoffEntries(category);
       if (entries.names.length >= 2) {
@@ -470,7 +497,7 @@ class SessionStore extends ChangeNotifier {
     return (names: names, seedTiers: seedTiers);
   }
 
-  void chooseFaceoff(String? winner) {
+  Future<void> chooseFaceoff(String? winner) async {
     final pairing = currentFaceoff;
     if (pairing == null || faceoffCategory == null || faceoffDone) return;
     if (winner != null && winner != pairing.left && winner != pairing.right) {
@@ -482,17 +509,17 @@ class SessionStore extends ChangeNotifier {
     if (!hasPartner && faceoffPairIndex >= faceoffPairings.length) {
       _applyFaceoffRound(localFaceoffVotes);
     }
-    _changed();
+    await _changed();
   }
 
-  void undoFaceoffVote() {
+  Future<void> undoFaceoffVote() async {
     if (!hasPartner || faceoffVoteHistory.isEmpty || faceoffPairIndex == 0) {
       return;
     }
     final key = faceoffVoteHistory.removeLast();
     localFaceoffVotes.remove(key);
     faceoffPairIndex--;
-    _changed();
+    await _changed();
   }
 
   List<FaceoffResult> results(NameCategory category) {
@@ -523,7 +550,7 @@ class SessionStore extends ChangeNotifier {
     return opponentScores;
   }
 
-  bool addCustom(String name, Set<NameCategory> selected) {
+  Future<bool> addCustom(String name, Set<NameCategory> selected) async {
     if (!isValidCustomName(name)) return false;
     for (final category in selected) {
       final list = category == NameCategory.girls ? customGirls : customBoys;
@@ -533,11 +560,12 @@ class SessionStore extends ChangeNotifier {
       }
       list.add(name.trim());
     }
-    _changed();
+    customNamesSent = false;
+    await _changed();
     return true;
   }
 
-  bool removeCustom(String name, NameCategory category) {
+  Future<bool> removeCustom(String name, NameCategory category) async {
     if (faceoffStarted) return false;
     final list = category == NameCategory.girls ? customGirls : customBoys;
     final index = list.indexWhere(
@@ -545,9 +573,27 @@ class SessionStore extends ChangeNotifier {
     );
     if (index < 0) return false;
     list.removeAt(index);
-    _changed();
+    customNamesSent = false;
+    await _changed();
     return true;
   }
+
+  Future<void> setPrivateNote(
+    NameCategory category,
+    String name,
+    String note,
+  ) async {
+    final key = '${category.name}:${normalizeName(name)}';
+    if (note.trim().isEmpty) {
+      privateNotes.remove(key);
+    } else {
+      privateNotes[key] = note.trim();
+    }
+    await _changed();
+  }
+
+  String privateNote(NameCategory category, String name) =>
+      privateNotes['${category.name}:${normalizeName(name)}'] ?? '';
 
   String invitePayload() {
     if (!hasSession) {
@@ -613,8 +659,6 @@ class SessionStore extends ChangeNotifier {
     outgoingSequence++;
     final data = <String, Object?>{
       'votes': votes.map((id, value) => MapEntry('$id', value.name)),
-      'customGirls': customGirls,
-      'customBoys': customBoys,
     };
     final packet = await QrProtocol.encrypt(
       secret: _secret!,
@@ -626,6 +670,89 @@ class SessionStore extends ChangeNotifier {
     );
     await _persist();
     return packet;
+  }
+
+  /// A separate event keeps the Face-off entry set explicit and auditable.
+  Future<String> customNamesUpdatePayload() async {
+    if (!hasSession || !hasPartner) {
+      throw StateError(
+        'Pair with your partner before synchronizing custom names.',
+      );
+    }
+    outgoingSequence++;
+    final packet = await QrProtocol.encrypt(
+      secret: _secret!,
+      sessionId: sessionId,
+      sourceParticipantId: localParticipantId,
+      eventType: 'custom_names',
+      sequence: outgoingSequence,
+      payload: {'girls': customGirls, 'boys': customBoys},
+    );
+    customNamesSent = true;
+    await _persist();
+    notifyListeners();
+    return packet;
+  }
+
+  Future<void> importCustomNamesUpdate(String text) async {
+    if (!hasSession) {
+      throw const QrProtocolError('Pair this phone before importing updates.');
+    }
+    final decoded = await QrProtocol.decrypt(
+      secret: _secret!,
+      sessionId: sessionId,
+      encoded: text,
+    );
+    if (decoded['type'] != 'custom_names') {
+      throw const QrProtocolError('This is not a custom-name update.');
+    }
+    final source = decoded['source'] as String;
+    final sequence = decoded['sequence'] as int;
+    _validatePartnerEvent(source, sequence);
+    final payload = decoded['payload'] as Map<String, Object?>;
+    final girls = _mergeCustomNames(
+      existing: customGirls,
+      imported: payload['girls'],
+    );
+    final boys = _mergeCustomNames(
+      existing: customBoys,
+      imported: payload['boys'],
+    );
+    final oldGirls = [...customGirls];
+    final oldBoys = [...customBoys];
+    final oldPartner = partnerParticipantId;
+    final oldReceived = partnerCustomNamesReceived;
+    final oldApplied = Set<String>.from(appliedEventIds);
+    final oldHighest = Map<String, int>.from(highestAcceptedSequence);
+    try {
+      customGirls
+        ..clear()
+        ..addAll(girls);
+      customBoys
+        ..clear()
+        ..addAll(boys);
+      partnerParticipantId ??= source;
+      partnerCustomNamesReceived = true;
+      _acceptEvent(source, sequence);
+      await _persist();
+    } catch (_) {
+      customGirls
+        ..clear()
+        ..addAll(oldGirls);
+      customBoys
+        ..clear()
+        ..addAll(oldBoys);
+      partnerParticipantId = oldPartner;
+      partnerCustomNamesReceived = oldReceived;
+      appliedEventIds
+        ..clear()
+        ..addAll(oldApplied);
+      highestAcceptedSequence
+        ..clear()
+        ..addAll(oldHighest);
+      rethrow;
+    }
+    notifyListeners();
   }
 
   Future<String> pairAcceptPayload() async {
@@ -668,7 +795,7 @@ class SessionStore extends ChangeNotifier {
     }
     partnerParticipantId = source;
     paired = true;
-    appliedEventIds.add('$source:$sequence');
+    _acceptEvent(source, sequence);
     await _persist();
     notifyListeners();
   }
@@ -687,20 +814,8 @@ class SessionStore extends ChangeNotifier {
     }
     final sequence = decoded['sequence'] as int;
     final source = decoded['source'] as String;
-    if (source == localParticipantId) {
-      throw const QrProtocolError(
-        'This is your own update, not your partner\'s.',
-      );
-    }
-    if (partnerParticipantId != null && source != partnerParticipantId) {
-      throw const QrProtocolError(
-        'This update was created by a different partner.',
-      );
-    }
+    _validatePartnerEvent(source, sequence);
     final eventId = '$source:$sequence';
-    if (appliedEventIds.contains(eventId)) {
-      throw const QrProtocolError('This update was already imported.');
-    }
     final payload = decoded['payload'] as Map<String, Object?>;
     final importedVotes = payload['votes'];
     if (importedVotes is! Map || importedVotes.length > candidates.length) {
@@ -716,27 +831,27 @@ class SessionStore extends ChangeNotifier {
       }
       nextPartnerVotes[id] = VoteValue.values.byName(entry.value as String);
     }
-    final nextCustomGirls = _mergeCustomNames(
-      existing: customGirls,
-      imported: payload['customGirls'],
-    );
-    final nextCustomBoys = _mergeCustomNames(
-      existing: customBoys,
-      imported: payload['customBoys'],
-    );
-    partnerVotes
-      ..clear()
-      ..addAll(nextPartnerVotes);
-    customGirls
-      ..clear()
-      ..addAll(nextCustomGirls);
-    customBoys
-      ..clear()
-      ..addAll(nextCustomBoys);
-    partnerParticipantId ??= source;
-    appliedEventIds.add(eventId);
-    partnerVotesReceived = true;
-    await _persist();
+    final oldVotes = Map<int, VoteValue>.from(partnerVotes);
+    final oldPartner = partnerParticipantId;
+    final oldReceived = partnerVotesReceived;
+    try {
+      partnerVotes
+        ..clear()
+        ..addAll(nextPartnerVotes);
+      partnerParticipantId ??= source;
+      _acceptEvent(source, sequence);
+      partnerVotesReceived = true;
+      await _persist();
+    } catch (_) {
+      partnerVotes
+        ..clear()
+        ..addAll(oldVotes);
+      partnerParticipantId = oldPartner;
+      partnerVotesReceived = oldReceived;
+      appliedEventIds.remove(eventId);
+      highestAcceptedSequence.remove(source);
+      rethrow;
+    }
     notifyListeners();
   }
 
@@ -801,13 +916,34 @@ class SessionStore extends ChangeNotifier {
       }
       nextVotes[key] = choice as String?;
     }
-    partnerFaceoffVotes
-      ..clear()
-      ..addAll(nextVotes);
-    _applyFaceoffRound(nextVotes);
-    partnerParticipantId ??= source;
-    appliedEventIds.add('$source:$sequence');
-    await _persist();
+    // One write commits the imported votes and their derived scoring together.
+    final faceoffBefore = _faceoffSnapshot();
+    final oldPartner = partnerParticipantId;
+    final oldApplied = Set<String>.from(appliedEventIds);
+    final oldHighest = Map<String, int>.from(highestAcceptedSequence);
+    final oldPartnerVotes = Map<String, String?>.from(partnerFaceoffVotes);
+    try {
+      partnerFaceoffVotes
+        ..clear()
+        ..addAll(nextVotes);
+      partnerParticipantId ??= source;
+      _acceptEvent(source, sequence);
+      _applyFaceoffRound(nextVotes);
+      await _persist();
+    } catch (_) {
+      _restoreFaceoff(faceoffBefore);
+      partnerFaceoffVotes
+        ..clear()
+        ..addAll(oldPartnerVotes);
+      partnerParticipantId = oldPartner;
+      appliedEventIds
+        ..clear()
+        ..addAll(oldApplied);
+      highestAcceptedSequence
+        ..clear()
+        ..addAll(oldHighest);
+      rethrow;
+    }
     notifyListeners();
   }
 
@@ -824,13 +960,17 @@ class SessionStore extends ChangeNotifier {
     history.clear();
     customGirls.clear();
     customBoys.clear();
+    privateNotes.clear();
     appliedEventIds.clear();
+    highestAcceptedSequence.clear();
     sessionId = '';
     localParticipantId = '';
     partnerParticipantId = null;
     _secret = null;
     paired = false;
     partnerVotesReceived = false;
+    customNamesSent = false;
+    partnerCustomNamesReceived = false;
     faceoffRound = 0;
     faceoffPairIndex = 0;
     faceoffCategory = null;
@@ -856,9 +996,15 @@ class SessionStore extends ChangeNotifier {
     notifyListeners();
   }
 
-  void _changed() {
-    unawaited(_persist());
+  Future<void> _changed() async {
+    _writesPending++;
     notifyListeners();
+    try {
+      await _persist();
+    } finally {
+      _writesPending--;
+      notifyListeners();
+    }
   }
 
   Future<void> _loadCandidates() async {
@@ -892,6 +1038,10 @@ class SessionStore extends ChangeNotifier {
         'This update contains too many custom names.',
       );
     }
+    merged.sort((a, b) {
+      final key = normalizeName(a).compareTo(normalizeName(b));
+      return key != 0 ? key : a.compareTo(b);
+    });
     return merged;
   }
 
@@ -909,6 +1059,16 @@ class SessionStore extends ChangeNotifier {
     if (appliedEventIds.contains('$source:$sequence')) {
       throw const QrProtocolError('This update was already imported.');
     }
+    if (sequence <= (highestAcceptedSequence[source] ?? 0)) {
+      throw const QrProtocolError(
+        'This update is older than your latest partner update.',
+      );
+    }
+  }
+
+  void _acceptEvent(String source, int sequence) {
+    appliedEventIds.add('$source:$sequence');
+    highestAcceptedSequence[source] = sequence;
   }
 
   String _faceoffVoteKey(Pairing pairing) =>
@@ -987,72 +1147,125 @@ class SessionStore extends ChangeNotifier {
     _prepareNextCategory(after: category);
   }
 
-  Future<void> _persist() async {
-    await _state.write(
-      jsonEncode({
-        'stateVersion': _stateVersion,
-        'countries': countries.toList(),
-        'categories': categories.map((value) => value.name).toList(),
-        'votes': votes.map((key, value) => MapEntry('$key', value.name)),
-        'partnerVotes': partnerVotes.map(
-          (key, value) => MapEntry('$key', value.name),
-        ),
-        'history': history,
-        'customGirls': customGirls,
-        'customBoys': customBoys,
-        'seed': seed,
-        'sessionId': sessionId,
-        'localParticipantId': localParticipantId,
-        'partnerParticipantId': partnerParticipantId,
-        'paired': paired,
-        'partnerVotesReceived': partnerVotesReceived,
-        'faceoffRound': faceoffRound,
-        'faceoffPairIndex': faceoffPairIndex,
-        'faceoffCategory': faceoffCategory?.name,
-        'faceoffNames': faceoffNames.map(
-          (key, value) => MapEntry(key.name, value),
-        ),
-        'faceoffScores': faceoffScores.map(
-          (key, value) => MapEntry(key.name, value),
-        ),
-        'faceoffUnanimousWins': faceoffUnanimousWins.map(
-          (key, value) => MapEntry(key.name, value),
-        ),
-        'faceoffSeedTiers': faceoffSeedTiers.map(
-          (key, value) => MapEntry(key.name, value),
-        ),
-        'faceoffComparisons': faceoffComparisons.map(
-          (key, value) => MapEntry(key.name, value),
-        ),
-        'faceoffLeftCounts': faceoffLeftCounts.map(
-          (key, value) => MapEntry(key.name, value),
-        ),
-        'faceoffRightCounts': faceoffRightCounts.map(
-          (key, value) => MapEntry(key.name, value),
-        ),
-        'faceoffPrevious': faceoffPrevious.map(
-          (key, value) => MapEntry(key.name, value.toList()),
-        ),
-        'faceoffCompleted': faceoffCompleted
-            .map((value) => value.name)
-            .toList(),
-        'faceoffTopTenHistory': faceoffTopTenHistory.map(
-          (key, value) => MapEntry(key.name, value),
-        ),
-        'faceoffTieBreakEntries': faceoffTieBreakEntries.map(
-          (key, value) => MapEntry(key.name, value),
-        ),
-        'faceoffPairings': faceoffPairings
-            .map((pairing) => [pairing.left, pairing.right])
-            .toList(),
-        'localFaceoffVotes': localFaceoffVotes,
-        'partnerFaceoffVotes': partnerFaceoffVotes,
-        'faceoffVoteHistory': faceoffVoteHistory,
-        'outgoingSequence': outgoingSequence,
-        'appliedEventIds': appliedEventIds.toList(),
-      }),
-    );
+  Future<void> _persist() {
+    final encoded = jsonEncode({
+      'stateVersion': _stateVersion,
+      'countries': countries.toList(),
+      'categories': categories.map((value) => value.name).toList(),
+      'votes': votes.map((key, value) => MapEntry('$key', value.name)),
+      'partnerVotes': partnerVotes.map(
+        (key, value) => MapEntry('$key', value.name),
+      ),
+      'history': history,
+      'customGirls': customGirls,
+      'customBoys': customBoys,
+      'privateNotes': privateNotes,
+      'seed': seed,
+      'sessionId': sessionId,
+      'localParticipantId': localParticipantId,
+      'partnerParticipantId': partnerParticipantId,
+      'paired': paired,
+      'partnerVotesReceived': partnerVotesReceived,
+      'customNamesSent': customNamesSent,
+      'partnerCustomNamesReceived': partnerCustomNamesReceived,
+      'faceoffRound': faceoffRound,
+      'faceoffPairIndex': faceoffPairIndex,
+      'faceoffCategory': faceoffCategory?.name,
+      'faceoffNames': faceoffNames.map(
+        (key, value) => MapEntry(key.name, value),
+      ),
+      'faceoffScores': faceoffScores.map(
+        (key, value) => MapEntry(key.name, value),
+      ),
+      'faceoffUnanimousWins': faceoffUnanimousWins.map(
+        (key, value) => MapEntry(key.name, value),
+      ),
+      'faceoffSeedTiers': faceoffSeedTiers.map(
+        (key, value) => MapEntry(key.name, value),
+      ),
+      'faceoffComparisons': faceoffComparisons.map(
+        (key, value) => MapEntry(key.name, value),
+      ),
+      'faceoffLeftCounts': faceoffLeftCounts.map(
+        (key, value) => MapEntry(key.name, value),
+      ),
+      'faceoffRightCounts': faceoffRightCounts.map(
+        (key, value) => MapEntry(key.name, value),
+      ),
+      'faceoffPrevious': faceoffPrevious.map(
+        (key, value) => MapEntry(key.name, value.toList()),
+      ),
+      'faceoffCompleted': faceoffCompleted.map((value) => value.name).toList(),
+      'faceoffTopTenHistory': faceoffTopTenHistory.map(
+        (key, value) => MapEntry(key.name, value),
+      ),
+      'faceoffTieBreakEntries': faceoffTieBreakEntries.map(
+        (key, value) => MapEntry(key.name, value),
+      ),
+      'faceoffPairings': faceoffPairings
+          .map((pairing) => [pairing.left, pairing.right])
+          .toList(),
+      'localFaceoffVotes': localFaceoffVotes,
+      'partnerFaceoffVotes': partnerFaceoffVotes,
+      'faceoffVoteHistory': faceoffVoteHistory,
+      'outgoingSequence': outgoingSequence,
+      'appliedEventIds': appliedEventIds.toList(),
+      'highestAcceptedSequence': highestAcceptedSequence,
+    });
+    final write = _persistTail.then((_) => _state.write(encoded));
+    _persistTail = write.catchError((_) {});
+    return write;
   }
+
+  Map<String, Object?> _faceoffSnapshot() =>
+      (jsonDecode(
+                jsonEncode({
+                  'faceoffRound': faceoffRound,
+                  'faceoffPairIndex': faceoffPairIndex,
+                  'faceoffCategory': faceoffCategory?.name,
+                  'faceoffNames': faceoffNames.map(
+                    (key, value) => MapEntry(key.name, value),
+                  ),
+                  'faceoffScores': faceoffScores.map(
+                    (key, value) => MapEntry(key.name, value),
+                  ),
+                  'faceoffUnanimousWins': faceoffUnanimousWins.map(
+                    (key, value) => MapEntry(key.name, value),
+                  ),
+                  'faceoffSeedTiers': faceoffSeedTiers.map(
+                    (key, value) => MapEntry(key.name, value),
+                  ),
+                  'faceoffComparisons': faceoffComparisons.map(
+                    (key, value) => MapEntry(key.name, value),
+                  ),
+                  'faceoffLeftCounts': faceoffLeftCounts.map(
+                    (key, value) => MapEntry(key.name, value),
+                  ),
+                  'faceoffRightCounts': faceoffRightCounts.map(
+                    (key, value) => MapEntry(key.name, value),
+                  ),
+                  'faceoffPrevious': faceoffPrevious.map(
+                    (key, value) => MapEntry(key.name, value.toList()),
+                  ),
+                  'faceoffCompleted': faceoffCompleted
+                      .map((value) => value.name)
+                      .toList(),
+                  'faceoffTopTenHistory': faceoffTopTenHistory.map(
+                    (key, value) => MapEntry(key.name, value),
+                  ),
+                  'faceoffTieBreakEntries': faceoffTieBreakEntries.map(
+                    (key, value) => MapEntry(key.name, value),
+                  ),
+                  'faceoffPairings': faceoffPairings
+                      .map((pairing) => [pairing.left, pairing.right])
+                      .toList(),
+                  'localFaceoffVotes': localFaceoffVotes,
+                  'partnerFaceoffVotes': partnerFaceoffVotes,
+                  'faceoffVoteHistory': faceoffVoteHistory,
+                }),
+              )
+              as Map)
+          .cast<String, Object?>();
 
   void _prepareNextCategory({NameCategory? after}) {
     final ordered = NameCategory.values

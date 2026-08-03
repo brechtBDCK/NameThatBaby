@@ -31,6 +31,29 @@ class MemoryState implements SessionStateStore {
   Future<void> write(String state) async => value = state;
 }
 
+class DelayedState extends MemoryState {
+  int writes = 0;
+
+  @override
+  Future<void> write(String state) async {
+    writes++;
+    // The first mutation takes longer: an unsafe fire-and-forget implementation
+    // would let it overwrite the newer snapshot.
+    await Future<void>.delayed(Duration(milliseconds: writes == 1 ? 20 : 1));
+    value = state;
+  }
+}
+
+class FailingState extends MemoryState {
+  bool failWrites = false;
+
+  @override
+  Future<void> write(String state) {
+    if (failWrites) return Future<void>.error(StateError('disk unavailable'));
+    return super.write(state);
+  }
+}
+
 class MemoryLegacyState implements LegacySessionStateStore {
   String? value;
 
@@ -84,6 +107,146 @@ void main() {
     expect(legacy.value, isNull);
   });
 
+  test('queued persistence retains the newest vote and undo', () async {
+    final state = DelayedState();
+    final secrets = MemorySecrets();
+    final store = testStore(secrets: secrets, state: state);
+    await store.ensureSession();
+    final first = store.current!;
+    await store.vote(VoteValue.yes);
+    await store.undo();
+    await store.vote(VoteValue.maybe);
+
+    final resumed = testStore(secrets: secrets, state: state);
+    await resumed.restore();
+    expect(resumed.votes[first.id], VoteValue.maybe);
+    expect(resumed.history, [first.id]);
+  });
+
+  test('queued persistence retains the newest Face-off state', () async {
+    final state = DelayedState();
+    final secrets = MemorySecrets();
+    final store = testStore(secrets: secrets, state: state);
+    for (final candidate in store.candidates.where(
+      (candidate) => candidate.rank <= 2,
+    )) {
+      store.votes[candidate.id] = VoteValue.yes;
+      store.partnerVotes[candidate.id] = VoteValue.yes;
+    }
+    store.startFaceoff();
+    await store.chooseFaceoff(store.currentFaceoff!.left);
+    final resumed = testStore(secrets: secrets, state: state);
+    await resumed.restore();
+    expect(resumed.faceoffStarted, isTrue);
+    expect(resumed.faceoffRound, store.faceoffRound);
+    expect(resumed.faceoffScores, store.faceoffScores);
+  });
+
+  test('private result notes survive a persisted resume', () async {
+    final secrets = MemorySecrets();
+    final state = MemoryState();
+    final store = testStore(secrets: secrets, state: state);
+    await store.ensureSession();
+    await store.setPrivateNote(
+      NameCategory.girls,
+      'Elena',
+      'Ask about family spelling',
+    );
+    final resumed = testStore(secrets: secrets, state: state);
+    await resumed.restore();
+    expect(
+      resumed.privateNote(NameCategory.girls, 'Elena'),
+      'Ask about family spelling',
+    );
+  });
+
+  test('imports reject duplicate, stale, and wrong-partner packets', () async {
+    final creator = testStore();
+    await creator.ensureSession();
+    final partner = testStore();
+    await partner.importInvite(creator.invitePayload());
+    await creator.importPairAccept(await partner.pairAcceptPayload());
+    final first = await partner.voteUpdatePayload();
+    await partner.vote(VoteValue.yes);
+    final newest = await partner.voteUpdatePayload();
+    await creator.importVoteUpdate(newest);
+    await expectLater(
+      creator.importVoteUpdate(newest),
+      throwsA(isA<QrProtocolError>()),
+    );
+    await expectLater(
+      creator.importVoteUpdate(first),
+      throwsA(isA<QrProtocolError>()),
+    );
+
+    final stranger = testStore();
+    await stranger.importInvite(creator.invitePayload());
+    await expectLater(
+      creator.importVoteUpdate(await stranger.voteUpdatePayload()),
+      throwsA(isA<QrProtocolError>()),
+    );
+  });
+
+  test('a failed import restores the existing choosing state', () async {
+    final secrets = MemorySecrets();
+    final state = FailingState();
+    final creator = testStore(secrets: secrets, state: state);
+    await creator.ensureSession();
+    final partner = testStore();
+    await partner.importInvite(creator.invitePayload());
+    await creator.importPairAccept(await partner.pairAcceptPayload());
+    final before = Map<int, VoteValue>.from(creator.partnerVotes);
+    state.failWrites = true;
+    await expectLater(
+      creator.importVoteUpdate(await partner.voteUpdatePayload()),
+      throwsA(isA<StateError>()),
+    );
+    expect(creator.partnerVotes, before);
+    expect(creator.partnerVotesReceived, isFalse);
+  });
+
+  test('a failed Face-off import restores the active round', () async {
+    final state = FailingState();
+    final first = testStore(state: state);
+    await first.ensureSession();
+    final second = testStore();
+    await second.importInvite(first.invitePayload());
+    await first.importPairAccept(await second.pairAcceptPayload());
+    await first.importCustomNamesUpdate(
+      await second.customNamesUpdatePayload(),
+    );
+    await second.importCustomNamesUpdate(
+      await first.customNamesUpdatePayload(),
+    );
+    for (final store in [first, second]) {
+      for (final candidate in store.candidates.where(
+        (candidate) => candidate.rank <= 2,
+      )) {
+        store.votes[candidate.id] = VoteValue.yes;
+        store.partnerVotes[candidate.id] = VoteValue.yes;
+      }
+      store.startFaceoff();
+      while (store.currentFaceoff != null) {
+        await store.chooseFaceoff(store.currentFaceoff!.left);
+      }
+    }
+    final round = first.faceoffRound;
+    final pairings = [...first.faceoffPairings];
+    state.failWrites = true;
+    await expectLater(
+      first.importFaceoffUpdate(await second.faceoffUpdatePayload()),
+      throwsA(isA<StateError>()),
+    );
+    expect(first.faceoffRound, round);
+    expect(
+      first.faceoffPairings.map(
+        (pairing) => pairKey(pairing.left, pairing.right),
+      ),
+      pairings.map((pairing) => pairKey(pairing.left, pairing.right)),
+    );
+    expect(first.partnerFaceoffVotes, isEmpty);
+  });
+
   test('faceoff uses shared shortlist and produces category rankings', () {
     final store = testStore();
     for (final candidate in store.candidates.where(
@@ -130,25 +293,25 @@ void main() {
     expect(store.faceoffStarted, isFalse);
   });
 
-  test('a custom name can enter both category lists', () {
+  test('a custom name can enter both category lists', () async {
     final store = testStore();
 
-    expect(store.addCustom('Robin', NameCategory.values.toSet()), isTrue);
-    expect(store.addCustom('Arden', NameCategory.values.toSet()), isTrue);
+    expect(await store.addCustom('Robin', NameCategory.values.toSet()), isTrue);
+    expect(await store.addCustom('Arden', NameCategory.values.toSet()), isTrue);
     store.startFaceoff();
 
     expect(store.faceoffNames[NameCategory.girls], contains('Robin'));
     expect(store.faceoffNames[NameCategory.boys], contains('Robin'));
   });
 
-  test('custom names can be removed only before Face-off starts', () {
+  test('custom names can be removed only before Face-off starts', () async {
     final store = testStore();
-    store.addCustom('Robin', {NameCategory.girls});
-    expect(store.removeCustom('Robin', NameCategory.girls), isTrue);
-    store.addCustom('Robin', {NameCategory.girls});
-    store.addCustom('Arden', {NameCategory.girls});
+    await store.addCustom('Robin', {NameCategory.girls});
+    expect(await store.removeCustom('Robin', NameCategory.girls), isTrue);
+    await store.addCustom('Robin', {NameCategory.girls});
+    await store.addCustom('Arden', {NameCategory.girls});
     store.startFaceoff();
-    expect(store.removeCustom('Robin', NameCategory.girls), isFalse);
+    expect(await store.removeCustom('Robin', NameCategory.girls), isFalse);
   });
 
   test(
@@ -158,9 +321,10 @@ void main() {
       await creator.ensureSession();
       final partner = testStore();
       await partner.importInvite(creator.invitePayload());
-      expect(partner.addCustom('Robin', {NameCategory.girls}), isTrue);
-
-      await creator.importVoteUpdate(await partner.voteUpdatePayload());
+      expect(await partner.addCustom('Robin', {NameCategory.girls}), isTrue);
+      await creator.importCustomNamesUpdate(
+        await partner.customNamesUpdatePayload(),
+      );
 
       expect(creator.customGirls, ['Robin']);
       expect(creator.customBoys, isEmpty);
@@ -175,6 +339,12 @@ void main() {
       final second = testStore();
       await second.importInvite(first.invitePayload());
       first.partnerParticipantId = second.localParticipantId;
+      await first.importCustomNamesUpdate(
+        await second.customNamesUpdatePayload(),
+      );
+      await second.importCustomNamesUpdate(
+        await first.customNamesUpdatePayload(),
+      );
       for (final store in [first, second]) {
         for (final candidate in store.candidates.where(
           (candidate) => candidate.rank <= 2,
@@ -184,7 +354,7 @@ void main() {
         }
         store.startFaceoff();
         while (store.currentFaceoff != null) {
-          store.chooseFaceoff(store.currentFaceoff!.left);
+          await store.chooseFaceoff(store.currentFaceoff!.left);
         }
         expect(store.faceoffRoundReady, isTrue);
       }
@@ -223,6 +393,12 @@ void main() {
     await partner.importInvite(creator.invitePayload());
 
     await creator.importPairAccept(await partner.pairAcceptPayload());
+    await creator.importCustomNamesUpdate(
+      await partner.customNamesUpdatePayload(),
+    );
+    await partner.importCustomNamesUpdate(
+      await creator.customNamesUpdatePayload(),
+    );
 
     expect(await creator.confirmationCode(), await partner.confirmationCode());
   });
@@ -233,6 +409,12 @@ void main() {
     final partner = testStore();
     await partner.importInvite(creator.invitePayload());
     await creator.importPairAccept(await partner.pairAcceptPayload());
+    await creator.importCustomNamesUpdate(
+      await partner.customNamesUpdatePayload(),
+    );
+    await partner.importCustomNamesUpdate(
+      await creator.customNamesUpdatePayload(),
+    );
     for (final candidate in creator.candidates.where(
       (candidate) => candidate.rank <= 2,
     )) {
@@ -242,8 +424,8 @@ void main() {
     creator.startFaceoff();
     final pairing = creator.currentFaceoff!;
 
-    creator.chooseFaceoff(pairing.left);
-    creator.undoFaceoffVote();
+    await creator.chooseFaceoff(pairing.left);
+    await creator.undoFaceoffVote();
 
     expect(creator.currentFaceoff!.left, pairing.left);
     expect(creator.localFaceoffVotes, isEmpty);

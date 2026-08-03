@@ -78,6 +78,17 @@ void main() {
     expect(find.text('View shared favorites'), findsOneWidget);
   });
 
+  testWidgets('custom-name sync reports bidirectional status', (tester) async {
+    final store = SessionStore()..partnerParticipantId = 'partner';
+    await tester.pumpWidget(
+      MaterialApp(
+        home: SyncVotes(store: store, custom: true, done: () {}, scan: () {}),
+      ),
+    );
+    expect(find.textContaining('Both phones must exchange'), findsOneWidget);
+    expect(find.textContaining('Your code: not sent'), findsOneWidget);
+  });
+
   testWidgets('home offers an in-progress Face-off resume action', (
     tester,
   ) async {

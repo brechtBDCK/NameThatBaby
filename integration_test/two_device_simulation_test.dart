@@ -56,9 +56,14 @@ Future<void> runTwoDeviceSimulation() async {
     first.votes[id] = VoteValue.yes;
     second.votes[id] = index.isEven ? VoteValue.yes : VoteValue.maybe;
   }
-  expect(second.addCustom('Robin', NameCategory.values.toSet()), isTrue);
+  // Product order: choosing sync, then each partner adds locally, then both
+  // custom-name packets are exchanged before Face-off can snapshot entries.
+  expect(await first.addCustom('Robin', NameCategory.values.toSet()), isTrue);
+  expect(await second.addCustom('Arden', NameCategory.values.toSet()), isTrue);
   await first.importVoteUpdate(await second.voteUpdatePayload());
   await second.importVoteUpdate(await first.voteUpdatePayload());
+  await first.importCustomNamesUpdate(await second.customNamesUpdatePayload());
+  await second.importCustomNamesUpdate(await first.customNamesUpdatePayload());
 
   for (final device in [first, second]) {
     device.startFaceoff();
@@ -71,7 +76,7 @@ Future<void> runTwoDeviceSimulation() async {
   while (!first.faceoffDone) {
     for (final device in [first, second]) {
       while (device.currentFaceoff != null) {
-        device.chooseFaceoff(device.currentFaceoff!.left);
+        await device.chooseFaceoff(device.currentFaceoff!.left);
       }
     }
     final firstPacket = await first.faceoffUpdatePayload();

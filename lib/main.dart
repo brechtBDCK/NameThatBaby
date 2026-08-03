@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
+import 'app/theme.dart';
 import 'core/domain.dart';
 import 'core/qr_frames.dart';
 import 'core/qr_protocol.dart';
@@ -30,15 +31,6 @@ Future<void> main() async {
   runApp(NameThatBaby(store: store));
 }
 
-class Palette {
-  static const cream = Color(0xfff6f0e4);
-  static const surface = Color(0xfffff9ef);
-  static const forest = Color(0xff244b38);
-  static const terra = Color(0xffc65d3b);
-  static const sky = Color(0xffafcedb);
-  static const gold = Color(0xffd79a29);
-}
-
 class NameThatBaby extends StatelessWidget {
   const NameThatBaby({super.key, required this.store});
   final SessionStore store;
@@ -46,18 +38,7 @@ class NameThatBaby extends StatelessWidget {
   Widget build(BuildContext context) => MaterialApp(
     title: 'NameThatBaby',
     debugShowCheckedModeBanner: false,
-    theme: ThemeData(
-      useMaterial3: true,
-      scaffoldBackgroundColor: Palette.cream,
-      colorScheme: ColorScheme.fromSeed(
-        seedColor: Palette.forest,
-        surface: Palette.surface,
-      ),
-      textTheme: ThemeData.light().textTheme.apply(
-        bodyColor: Palette.forest,
-        displayColor: Palette.forest,
-      ),
-    ),
+    theme: nameThatBabyTheme(),
     home: AnimatedBuilder(
       animation: store,
       builder: (context, child) => AppShell(store: store),
@@ -73,9 +54,11 @@ enum AppPage {
   pairAccept,
   scanPairAccept,
   scanUpdate,
+  scanCustomUpdate,
   home,
   choosing,
   sync,
+  customSync,
   shortlist,
   custom,
   faceoff,
@@ -142,6 +125,23 @@ class _AppShellState extends State<AppShell> {
           done: () => go(AppPage.sync),
           back: () => go(AppPage.sync),
         );
+      case AppPage.scanCustomUpdate:
+        return ScanUpdate(
+          store: widget.store,
+          custom: true,
+          done: () => go(AppPage.customSync),
+          back: () => go(AppPage.customSync),
+        );
+      case AppPage.customSync:
+        return SyncVotes(
+          store: widget.store,
+          custom: true,
+          done: () {
+            widget.store.startFaceoff();
+            go(AppPage.faceoff);
+          },
+          scan: () => go(AppPage.scanCustomUpdate),
+        );
       case AppPage.home:
         return Home(store: widget.store, go: go);
       case AppPage.choosing:
@@ -162,16 +162,14 @@ class _AppShellState extends State<AppShell> {
           store: widget.store,
           custom: () => go(AppPage.custom),
           faceoff: () {
-            widget.store.startFaceoff();
-            go(AppPage.faceoff);
+            go(AppPage.custom);
           },
         );
       case AppPage.custom:
         return CustomNames(
           store: widget.store,
           done: () {
-            widget.store.startFaceoff();
-            go(AppPage.faceoff);
+            go(AppPage.customSync);
           },
         );
       case AppPage.faceoff:
@@ -325,7 +323,7 @@ class Welcome extends StatelessWidget {
           ).textTheme.displaySmall!.copyWith(fontWeight: FontWeight.w800),
         ),
         const SizedBox(height: 10),
-        const Text(
+        Text(
           'Find the name you both love.',
           textAlign: TextAlign.center,
           style: TextStyle(fontSize: 20),
@@ -380,7 +378,7 @@ class Setup extends StatelessWidget {
             context,
           ).textTheme.headlineMedium!.copyWith(fontWeight: FontWeight.w800),
         ),
-        const Text(
+        Text(
           'Each selected country contributes equally. Latest 10 complete years · 150 names per category.',
         ),
         const SizedBox(height: 18),
@@ -516,6 +514,34 @@ class _PairAcceptState extends State<PairAccept> {
             const Text(
               'Have your partner scan this confirmation code before you start choosing.',
               textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 16),
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Session summary',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      'Countries: ${widget.store.countries.map((code) => Setup.countries[code] ?? code).join(', ')}',
+                    ),
+                    Text(
+                      'Categories: ${widget.store.categories.map((category) => category == NameCategory.girls ? 'Girls' : 'Boys').join(', ')}',
+                    ),
+                    Text(
+                      'Candidates: ${widget.store.categories.map((category) => '${widget.store.enabled.where((candidate) => candidate.category == category).length} ${category == NameCategory.girls ? 'Girls' : 'Boys'}').join(' · ')}',
+                    ),
+                    Text(
+                      'Dataset edition: ${widget.store.datasetHash.substring(0, 12)}',
+                    ),
+                  ],
+                ),
+              ),
             ),
             const SizedBox(height: 20),
             Container(
@@ -677,9 +703,11 @@ class ScanUpdate extends StatefulWidget {
     required this.store,
     required this.done,
     required this.back,
+    this.custom = false,
   });
   final SessionStore store;
   final VoidCallback done, back;
+  final bool custom;
   @override
   State<ScanUpdate> createState() => _ScanUpdateState();
 }
@@ -708,7 +736,11 @@ class _ScanUpdateState extends State<ScanUpdate> {
         }
         return;
       }
-      await widget.store.importVoteUpdate(packet);
+      if (widget.custom) {
+        await widget.store.importCustomNamesUpdate(packet);
+      } else {
+        await widget.store.importVoteUpdate(packet);
+      }
       if (mounted) {
         widget.done();
       }
@@ -735,13 +767,17 @@ class _ScanUpdateState extends State<ScanUpdate> {
     child: Column(
       children: [
         Text(
-          'Scan partner update',
+          widget.custom ? 'Scan custom-name update' : 'Scan partner update',
           style: Theme.of(
             context,
           ).textTheme.headlineMedium!.copyWith(fontWeight: FontWeight.w800),
         ),
         const SizedBox(height: 8),
-        const Text('Scan the encrypted vote code your partner displays.'),
+        Text(
+          widget.custom
+              ? 'Scan the encrypted custom-name code your partner displays.'
+              : 'Scan the encrypted vote code your partner displays.',
+        ),
         const SizedBox(height: 18),
         Expanded(
           child: ClipRRect(
@@ -981,12 +1017,14 @@ class Choosing extends StatelessWidget {
           Expanded(
             child: GestureDetector(
               onHorizontalDragEnd: (details) {
+                if (store.isSaving) return;
                 final velocity = details.primaryVelocity ?? 0;
                 if (velocity.abs() < 350) return;
                 HapticFeedback.selectionClick();
                 store.vote(velocity < 0 ? VoteValue.no : VoteValue.yes);
               },
               onVerticalDragEnd: (details) {
+                if (store.isSaving) return;
                 final velocity = details.primaryVelocity ?? 0;
                 if (velocity > -350) return;
                 HapticFeedback.selectionClick();
@@ -1032,24 +1070,28 @@ class Choosing extends StatelessWidget {
                 icon: Icons.close,
                 label: 'No',
                 color: Palette.terra,
-                onTap: () => store.vote(VoteValue.no),
+                onTap: store.isSaving ? null : () => store.vote(VoteValue.no),
               ),
               Decision(
                 icon: Icons.question_mark,
                 label: 'Maybe',
                 color: Palette.gold,
-                onTap: () => store.vote(VoteValue.maybe),
+                onTap: store.isSaving
+                    ? null
+                    : () => store.vote(VoteValue.maybe),
               ),
               Decision(
                 icon: Icons.favorite,
                 label: 'Yes',
                 color: Palette.forest,
-                onTap: () => store.vote(VoteValue.yes),
+                onTap: store.isSaving ? null : () => store.vote(VoteValue.yes),
               ),
             ],
           ),
           TextButton.icon(
-            onPressed: store.history.isEmpty ? null : store.undo,
+            onPressed: store.history.isEmpty || store.isSaving
+                ? null
+                : store.undo,
             icon: const Icon(Icons.undo),
             label: const Text('Undo last decision'),
           ),
@@ -1070,7 +1112,7 @@ class Decision extends StatelessWidget {
   final IconData icon;
   final String label;
   final Color color;
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
   @override
   Widget build(BuildContext context) => Column(
     children: [
@@ -1097,9 +1139,11 @@ class SyncVotes extends StatefulWidget {
     required this.store,
     required this.done,
     required this.scan,
+    this.custom = false,
   });
   final SessionStore store;
   final VoidCallback done, scan;
+  final bool custom;
   @override
   State<SyncVotes> createState() => _SyncVotesState();
 }
@@ -1114,7 +1158,9 @@ class _SyncVotesState extends State<SyncVotes> {
         frames = null;
         frameIndex = 0;
       });
-      final value = await widget.store.voteUpdatePayload();
+      final value = widget.custom
+          ? await widget.store.customNamesUpdatePayload()
+          : await widget.store.voteUpdatePayload();
       final framed = await QrFrameCodec.frame(value);
       if (mounted) {
         setState(() => frames = framed);
@@ -1131,16 +1177,37 @@ class _SyncVotesState extends State<SyncVotes> {
     child: ListView(
       children: [
         Text(
-          'Synchronize choices',
+          widget.custom ? 'Synchronize custom names' : 'Synchronize choices',
           style: Theme.of(
             context,
           ).textTheme.headlineMedium!.copyWith(fontWeight: FontWeight.w800),
         ),
-        const Text(
-          'Show your encrypted update to your partner, then scan theirs.',
+        Text(
+          widget.custom
+              ? 'Both phones must exchange a custom-name code before Face-off starts.'
+              : 'Show your encrypted update to your partner, then scan theirs.',
         ),
+        if (widget.custom)
+          Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: Text(
+              widget.store.customNamesConverged
+                  ? 'Both phones are up to date. Face-off can begin.'
+                  : 'Your code: ${widget.store.customNamesSent ? 'ready' : 'not sent'} · Partner code: ${widget.store.partnerCustomNamesReceived ? 'received' : 'waiting'}',
+              semanticsLabel: widget.store.customNamesConverged
+                  ? 'Custom names synchronized on both phones.'
+                  : 'Custom-name synchronization is still in progress.',
+            ),
+          ),
         const SizedBox(height: 16),
-        FilledButton(onPressed: make, child: const Text('Create my vote code')),
+        FilledButton(
+          onPressed: make,
+          child: Text(
+            widget.custom
+                ? 'Create my custom-name code'
+                : 'Create my vote code',
+          ),
+        ),
         if (frames != null)
           Container(
             color: Colors.white,
@@ -1170,10 +1237,14 @@ class _SyncVotesState extends State<SyncVotes> {
         ),
         if (error != null)
           Text(error!, style: const TextStyle(color: Colors.red)),
-        if (widget.store.partnerVotesReceived)
+        if (widget.custom
+            ? widget.store.customNamesConverged
+            : widget.store.partnerVotesReceived)
           FilledButton(
             onPressed: widget.done,
-            child: const Text('View shared favorites'),
+            child: Text(
+              widget.custom ? 'Start Face-off' : 'View shared favorites',
+            ),
           ),
       ],
     ),
@@ -1208,6 +1279,20 @@ class Shortlist extends StatelessWidget {
               MatchTier.strong,
         )
         .length;
+    entries.sort((left, right) {
+      final leftTier = matchTier(
+        store.votes[left.id]!,
+        store.partnerVotes[left.id]!,
+      );
+      final rightTier = matchTier(
+        store.votes[right.id]!,
+        store.partnerVotes[right.id]!,
+      );
+      final tier = rightTier.index.compareTo(leftTier.index);
+      return tier != 0
+          ? tier
+          : normalizeName(left.name).compareTo(normalizeName(right.name));
+    });
     return Shell(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1221,12 +1306,41 @@ class Shortlist extends StatelessWidget {
           Text('$strong strong · ${entries.length - strong} consider'),
           Expanded(
             child: ListView(
-              children: entries
-                  .map(
-                    (entry) => Card(
+              children: NameCategory.values
+                  .where(store.categories.contains)
+                  .expand((category) {
+                    final categoryEntries = entries
+                        .where((entry) => entry.category == category)
+                        .toList();
+                    final categoryStrong = categoryEntries
+                        .where(
+                          (entry) =>
+                              matchTier(
+                                store.votes[entry.id]!,
+                                store.partnerVotes[entry.id]!,
+                              ) ==
+                              MatchTier.strong,
+                        )
+                        .length;
+                    return [
+                      Padding(
+                        padding: const EdgeInsets.only(top: 12, bottom: 4),
+                        child: Text(
+                          '${category == NameCategory.girls ? 'Girls' : 'Boys'} · $categoryStrong Strong · ${categoryEntries.length - categoryStrong} Consider',
+                          style: Theme.of(context).textTheme.titleMedium,
+                        ),
+                      ),
+                      ...categoryEntries,
+                    ];
+                  })
+                  .map((value) {
+                    final entry = value as Candidate;
+                    return Card(
                       child: ListTile(
                         title: Text(entry.name),
-                        subtitle: Text(entry.countries.join(', ')),
+                        subtitle: Text(
+                          '${entry.countries.join(', ')} · You: ${store.votes[entry.id]!.name} · Partner: ${store.partnerVotes[entry.id]!.name}',
+                        ),
                         trailing: Chip(
                           label: Text(
                             matchTier(
@@ -1239,8 +1353,8 @@ class Shortlist extends StatelessWidget {
                           ),
                         ),
                       ),
-                    ),
-                  )
+                    );
+                  })
                   .toList(),
             ),
           ),
@@ -1324,8 +1438,8 @@ class _CustomNamesState extends State<CustomNames> {
         ),
         const SizedBox(height: 12),
         FilledButton(
-          onPressed: () {
-            if (widget.store.addCustom(controller.text, selected)) {
+          onPressed: () async {
+            if (await widget.store.addCustom(controller.text, selected)) {
               controller.clear();
               setState(() => error = '');
             } else {
@@ -1340,23 +1454,25 @@ class _CustomNamesState extends State<CustomNames> {
         _CustomList(
           label: 'Girls',
           names: widget.store.customGirls,
-          remove: (name) => setState(
-            () => widget.store.removeCustom(name, NameCategory.girls),
-          ),
+          remove: (name) async {
+            await widget.store.removeCustom(name, NameCategory.girls);
+            if (mounted) setState(() {});
+          },
         ),
         _CustomList(
           label: 'Boys',
           names: widget.store.customBoys,
-          remove: (name) => setState(
-            () => widget.store.removeCustom(name, NameCategory.boys),
-          ),
+          remove: (name) async {
+            await widget.store.removeCustom(name, NameCategory.boys);
+            if (mounted) setState(() {});
+          },
         ),
         FilledButton(
-          onPressed: widget.store.canStartFaceoff ? widget.done : null,
+          onPressed: widget.done,
           child: Text(
-            widget.store.canStartFaceoff
-                ? 'Continue to Face-off'
-                : 'Add two names to continue',
+            widget.store.hasPartner
+                ? 'Synchronize custom names'
+                : 'Continue to Face-off',
           ),
         ),
       ],
@@ -1449,28 +1565,32 @@ class Faceoff extends StatelessWidget {
               Expanded(
                 child: ChoiceCard(
                   name: pairing.left,
-                  onTap: () => store.chooseFaceoff(pairing.left),
+                  onTap: store.isSaving
+                      ? null
+                      : () => store.chooseFaceoff(pairing.left),
                 ),
               ),
               const Padding(padding: EdgeInsets.all(12), child: Text('or')),
               Expanded(
                 child: ChoiceCard(
                   name: pairing.right,
-                  onTap: () => store.chooseFaceoff(pairing.right),
+                  onTap: store.isSaving
+                      ? null
+                      : () => store.chooseFaceoff(pairing.right),
                 ),
               ),
             ],
           ),
           const Spacer(),
           TextButton.icon(
-            onPressed: store.faceoffVoteHistory.isEmpty
+            onPressed: store.faceoffVoteHistory.isEmpty || store.isSaving
                 ? null
                 : store.undoFaceoffVote,
             icon: const Icon(Icons.undo),
             label: const Text('Undo my last choice'),
           ),
           OutlinedButton.icon(
-            onPressed: () => store.chooseFaceoff(null),
+            onPressed: store.isSaving ? null : () => store.chooseFaceoff(null),
             icon: const Icon(Icons.skip_next),
             label: const Text('Skip this pairing'),
           ),
@@ -1627,20 +1747,24 @@ class _FaceoffRoundSyncState extends State<FaceoffRoundSync> {
 class ChoiceCard extends StatelessWidget {
   const ChoiceCard({super.key, required this.name, required this.onTap});
   final String name;
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
   @override
-  Widget build(BuildContext context) => InkWell(
-    onTap: onTap,
-    child: Container(
-      height: 180,
-      alignment: Alignment.center,
-      decoration: BoxDecoration(
-        color: Palette.surface,
-        borderRadius: BorderRadius.circular(24),
-      ),
-      child: Text(
-        name,
-        style: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
+  Widget build(BuildContext context) => Semantics(
+    button: true,
+    label: 'Choose $name',
+    child: InkWell(
+      onTap: onTap,
+      child: Container(
+        height: 180,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: Palette.surface,
+          borderRadius: BorderRadius.circular(24),
+        ),
+        child: Text(
+          name,
+          style: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
+        ),
       ),
     ),
   );
@@ -1676,26 +1800,89 @@ class Results extends StatelessWidget {
               ),
             ),
             if (results.isEmpty) const Text('No shared names yet.'),
-            ...results.asMap().entries.map(
-              (entry) => Card(
+            ...results.asMap().entries.map((entry) {
+              final name = entry.value.name;
+              final custom =
+                  (category == NameCategory.girls
+                          ? store.customGirls
+                          : store.customBoys)
+                      .map(normalizeName)
+                      .contains(normalizeName(name));
+              final candidate = store.enabled.cast<Candidate?>().firstWhere(
+                (value) =>
+                    value != null &&
+                    value.category == category &&
+                    normalizeName(value.name) == normalizeName(name),
+                orElse: () => null,
+              );
+              final tier = candidate == null
+                  ? 'Custom entry'
+                  : matchTier(
+                          store.votes[candidate.id]!,
+                          store.partnerVotes[candidate.id]!,
+                        ) ==
+                        MatchTier.strong
+                  ? 'Strong match'
+                  : 'Consider match';
+              return Card(
                 child: ListTile(
+                  onTap: () => _editPrivateNote(context, category, name),
                   leading: CircleAvatar(
                     backgroundColor: Palette.gold,
                     child: Text('${entry.key + 1}'),
                   ),
-                  title: Text(entry.value.name),
+                  title: Text(custom ? '$name · Custom' : name),
+                  subtitle: Text(
+                    '${candidate?.countries.join(', ') ?? 'Added locally'} · $tier${store.privateNote(category, name).isEmpty ? '' : ' · Note saved'}',
+                  ),
                   trailing: Text(
                     '${entry.value.score} ${entry.value.score == 1 ? 'point' : 'points'}',
                   ),
                 ),
-              ),
-            ),
+              );
+            }),
           ];
         }),
         FilledButton(onPressed: home, child: const Text('Back to home')),
       ],
     ),
   );
+
+  Future<void> _editPrivateNote(
+    BuildContext context,
+    NameCategory category,
+    String name,
+  ) async {
+    final controller = TextEditingController(
+      text: store.privateNote(category, name),
+    );
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (dialog) => AlertDialog(
+        title: Text('Private note for $name'),
+        content: TextField(
+          controller: controller,
+          maxLength: 280,
+          maxLines: 3,
+          decoration: const InputDecoration(labelText: 'Only on this phone'),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialog, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialog, true),
+            child: const Text('Save note'),
+          ),
+        ],
+      ),
+    );
+    if (saved == true) {
+      await store.setPrivateNote(category, name, controller.text);
+    }
+    controller.dispose();
+  }
 }
 
 class Privacy extends StatelessWidget {
@@ -1805,7 +1992,10 @@ class DataSources extends StatelessWidget {
               return Card(
                 child: ListTile(
                   title: Text(country['code']! as String),
-                  subtitle: Text('${country['provider']} · $years'),
+                  subtitle: Text(
+                    '${country['provider']} · $years\n${country['coverage_limitations']}${country['provider'].toString().contains('fixture') ? ' · Fixture' : ''}',
+                  ),
+                  isThreeLine: true,
                   trailing: const Icon(Icons.info_outline),
                 ),
               );

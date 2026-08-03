@@ -7,6 +7,7 @@ import json
 import sqlite3
 import sys
 import unicodedata
+import math
 from pathlib import Path
 
 from adapters.ssa_us import load_decade
@@ -53,6 +54,51 @@ def insert_observation(conn, name_id, source, name, category, year, count, rank)
     )
     return name_id
 
+
+def materialize_runtime_rankings(conn):
+    """Keep only the small, directly queried candidate rankings at runtime."""
+    conn.execute('''CREATE TABLE country_decade_ranking(
+      country_code TEXT NOT NULL, category TEXT NOT NULL, name_id INTEGER NOT NULL,
+      source_rank INTEGER NOT NULL, PRIMARY KEY(country_code, category, name_id))''')
+    for country, in conn.execute('SELECT code FROM country ORDER BY code'):
+      for category in ('girl', 'boy'):
+        source_lists = {}
+        rows = conn.execute('''SELECT o.source_id, o.name_id, n.normalized_key,
+              o.year, o.source_rank FROM name_observation o JOIN name n ON n.id=o.name_id
+              JOIN data_source s ON s.id=o.source_id
+              WHERE s.country_code=? AND o.category=?''', (country, category))
+        grouped = {}
+        for source, name_id, key, year, rank in rows:
+          grouped.setdefault(source, {}).setdefault(name_id, [key, []])[1].append((year, rank))
+        for source, names in grouped.items():
+          ranked = []
+          for name_id, (key, observations) in names.items():
+            score = sum(1 / math.log2(rank + 1) for _, rank in observations)
+            years = len({year for year, _ in observations})
+            latest_year = max(year for year, _ in observations)
+            latest_rank = min(rank for year, rank in observations if year == latest_year)
+            best_rank = min(rank for _, rank in observations)
+            ranked.append((name_id, key, score, years, latest_rank, best_rank))
+          ranked.sort(key=lambda row: (-row[2], -row[3], row[4], row[5], row[1]))
+          source_lists[source] = ranked
+        positions = {source: 0 for source in source_lists}
+        seen, selected = set(), []
+        while True:
+          progressed = False
+          for source in sorted(source_lists):
+            items = source_lists[source]
+            while positions[source] < len(items):
+              item = items[positions[source]]
+              positions[source] += 1
+              if item[1] not in seen:
+                seen.add(item[1]); selected.append(item[0]); progressed = True; break
+          if len(selected) >= 150: break
+          if not progressed: break
+        conn.executemany('INSERT INTO country_decade_ranking VALUES (?, ?, ?, ?)',
+                         [(country, category, name_id, rank) for rank, name_id in enumerate(selected, 1)])
+    conn.execute('DELETE FROM name WHERE id NOT IN (SELECT name_id FROM country_decade_ranking)')
+    conn.execute('DROP TABLE name_observation')
+
 def build():
     OUT.mkdir(parents=True, exist_ok=True)
     database = OUT / 'names.sqlite'
@@ -64,7 +110,6 @@ def build():
       CREATE TABLE data_source(id TEXT PRIMARY KEY, country_code TEXT NOT NULL, provider TEXT NOT NULL, source_url TEXT NOT NULL, edition TEXT NOT NULL, retrieved_at TEXT NOT NULL, license_status TEXT NOT NULL, methodology_notes TEXT);
       CREATE TABLE name(id INTEGER PRIMARY KEY, display_name TEXT NOT NULL, normalized_key TEXT NOT NULL UNIQUE);
       CREATE TABLE name_observation(name_id INTEGER NOT NULL, source_id TEXT NOT NULL, year INTEGER NOT NULL, category TEXT NOT NULL CHECK(category IN ('girl','boy')), count INTEGER, source_rank INTEGER NOT NULL, PRIMARY KEY(name_id,source_id,year,category));
-      CREATE INDEX observation_lookup ON name_observation(category, source_id, year, source_rank);
     ''')
     conn.executemany('INSERT INTO country VALUES (?, ?, 1)', sorted(COUNTRIES.items()))
     archive = ROOT / 'tools/name_data/raw_cache/names.zip'
@@ -147,6 +192,7 @@ def build():
             for rank, name in enumerate(values, 1):
                 for year in range(2015, 2025):
                     name_id = insert_observation(conn, name_id, source, name, category, year, 1000-rank, rank)
+    materialize_runtime_rankings(conn)
     conn.commit(); conn.execute('VACUUM'); conn.close()
     sha = hashlib.sha256(database.read_bytes()).hexdigest()
     country_manifest = []
@@ -166,4 +212,9 @@ def build():
     (OUT / 'manifest.json').write_text(json.dumps(manifest, indent=2, sort_keys=True) + '\n')
     print(f'{database} {sha}')
 
-if __name__ == '__main__': build()
+if __name__ == '__main__':
+    if len(sys.argv) == 3 and sys.argv[1] == '--output':
+        OUT = Path(sys.argv[2])
+    elif len(sys.argv) != 1:
+        raise SystemExit('usage: build_database.py [--output DIRECTORY]')
+    build()

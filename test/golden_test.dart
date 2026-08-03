@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:name_that_baby/app/theme.dart';
 import 'package:name_that_baby/core/domain.dart';
 import 'package:name_that_baby/core/session_store.dart';
 import 'package:name_that_baby/main.dart';

@@ -12,9 +12,9 @@ class QrProtocolError implements Exception {
 class QrProtocol {
   QrProtocol._();
 
-  /// Version 3 authenticates the sender identifier as associated data. Earlier
+  /// Version 4 adds a distinct CUSTOM_NAMES event. Earlier
   /// invitations remain readable only so the app can explain renewal.
-  static const version = 3;
+  static const version = 4;
   static const _maximumPacketLength = 12000;
   static final _algorithm = AesGcm.with256bits();
 
@@ -55,7 +55,7 @@ class QrProtocol {
       if (value['type'] != 'invite') {
         throw const QrProtocolError('This is not a compatible pairing code.');
       }
-      if (value['v'] == 1 || value['v'] == 2) {
+      if (value['v'] == 1 || value['v'] == 2 || value['v'] == 3) {
         throw const QrProtocolError(
           'This pairing code uses an older format. Ask your partner to create a new code.',
         );
