@@ -396,6 +396,11 @@ class SessionStore extends ChangeNotifier {
   }
 
   bool get faceoffStarted => faceoffNames.isNotEmpty;
+  bool get canStartFaceoff => faceoffStarted
+      ? faceoffNames.values.any((names) => names.length >= 2)
+      : categories.any(
+          (category) => _faceoffEntries(category).names.length >= 2,
+        );
   bool get faceoffDone =>
       faceoffStarted && faceoffCompleted.containsAll(faceoffNames.keys);
   Pairing? get currentFaceoff => faceoffPairIndex < faceoffPairings.length
@@ -412,39 +417,13 @@ class SessionStore extends ChangeNotifier {
   void startFaceoff() {
     if (faceoffStarted) return;
     for (final category in categories) {
-      final names = <String>[];
-      final seen = <String>{};
-      final seedTiers = <String, int>{};
-      for (final candidate in enabled.where(
-        (candidate) => candidate.category == category,
-      )) {
-        final mine = votes[candidate.id];
-        final partner = partnerVotes[candidate.id];
-        if (mine != null &&
-            partner != null &&
-            matchTier(mine, partner) != MatchTier.rejected &&
-            seen.add(normalizeName(candidate.name))) {
-          names.add(candidate.name);
-          seedTiers[candidate.name] =
-              mine == VoteValue.yes && partner == VoteValue.yes
-              ? 3
-              : mine == VoteValue.maybe && partner == VoteValue.maybe
-              ? 1
-              : 2;
-        }
-      }
-      final custom = category == NameCategory.girls ? customGirls : customBoys;
-      for (final name in custom) {
-        if (seen.add(normalizeName(name))) {
-          names.add(name);
-          seedTiers[name] = 2;
-        }
-      }
-      if (names.isNotEmpty) {
+      final entries = _faceoffEntries(category);
+      if (entries.names.length >= 2) {
+        final names = entries.names;
         faceoffNames[category] = names;
         faceoffScores[category] = {for (final name in names) name: 0};
         faceoffUnanimousWins[category] = {for (final name in names) name: 0};
-        faceoffSeedTiers[category] = seedTiers;
+        faceoffSeedTiers[category] = entries.seedTiers;
         faceoffComparisons[category] = {for (final name in names) name: 0};
         faceoffLeftCounts[category] = {for (final name in names) name: 0};
         faceoffRightCounts[category] = {for (final name in names) name: 0};
@@ -455,6 +434,40 @@ class SessionStore extends ChangeNotifier {
     faceoffRound = 0;
     _prepareNextCategory();
     _changed();
+  }
+
+  ({List<String> names, Map<String, int> seedTiers}) _faceoffEntries(
+    NameCategory category,
+  ) {
+    final names = <String>[];
+    final seen = <String>{};
+    final seedTiers = <String, int>{};
+    for (final candidate in enabled.where(
+      (candidate) => candidate.category == category,
+    )) {
+      final mine = votes[candidate.id];
+      final partner = partnerVotes[candidate.id];
+      if (mine != null &&
+          partner != null &&
+          matchTier(mine, partner) != MatchTier.rejected &&
+          seen.add(normalizeName(candidate.name))) {
+        names.add(candidate.name);
+        seedTiers[candidate.name] =
+            mine == VoteValue.yes && partner == VoteValue.yes
+            ? 3
+            : mine == VoteValue.maybe && partner == VoteValue.maybe
+            ? 1
+            : 2;
+      }
+    }
+    final custom = category == NameCategory.girls ? customGirls : customBoys;
+    for (final name in custom) {
+      if (seen.add(normalizeName(name))) {
+        names.add(name);
+        seedTiers[name] = 2;
+      }
+    }
+    return (names: names, seedTiers: seedTiers);
   }
 
   void chooseFaceoff(String? winner) {
@@ -520,6 +533,18 @@ class SessionStore extends ChangeNotifier {
       }
       list.add(name.trim());
     }
+    _changed();
+    return true;
+  }
+
+  bool removeCustom(String name, NameCategory category) {
+    if (faceoffStarted) return false;
+    final list = category == NameCategory.girls ? customGirls : customBoys;
+    final index = list.indexWhere(
+      (value) => normalizeName(value) == normalizeName(name),
+    );
+    if (index < 0) return false;
+    list.removeAt(index);
     _changed();
     return true;
   }

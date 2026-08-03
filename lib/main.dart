@@ -149,6 +149,7 @@ class _AppShellState extends State<AppShell> {
           store: widget.store,
           done: () =>
               go(widget.store.choosingDone ? AppPage.sync : AppPage.home),
+          back: () => go(AppPage.home),
         );
       case AppPage.sync:
         return SyncVotes(
@@ -777,28 +778,10 @@ class Home extends StatelessWidget {
         ...NameCategory.values
             .where(store.categories.contains)
             .map(
-              (category) => Card(
-                color: category == NameCategory.girls
-                    ? const Color(0xffffe8d9)
-                    : const Color(0xffe1f0f3),
-                child: ListTile(
-                  leading: SizedBox(
-                    width: 42,
-                    height: 42,
-                    child: CircularProgressIndicator(
-                      value: store.progress(category),
-                      color: category == NameCategory.girls
-                          ? Palette.terra
-                          : Palette.forest,
-                    ),
-                  ),
-                  title: Text(
-                    category == NameCategory.girls ? 'Girls' : 'Boys',
-                  ),
-                  subtitle: Text(
-                    '${(store.progress(category) * 100).round()}% complete · ${store.remaining(category).length} left',
-                  ),
-                ),
+              (category) => ProgressCard(
+                category: category,
+                progress: store.progress(category),
+                remaining: store.remaining(category).length,
               ),
             ),
         const SizedBox(height: 12),
@@ -812,6 +795,24 @@ class Home extends StatelessWidget {
           OutlinedButton(
             onPressed: () => go(AppPage.sync),
             child: const Text('Synchronize choices'),
+          ),
+        if (store.partnerVotesReceived)
+          FilledButton.tonalIcon(
+            onPressed: () => go(AppPage.shortlist),
+            icon: const Icon(Icons.favorite_outline),
+            label: const Text('View shared favorites'),
+          ),
+        if (store.faceoffStarted && !store.faceoffDone)
+          FilledButton.tonalIcon(
+            onPressed: () => go(AppPage.faceoff),
+            icon: const Icon(Icons.compare_arrows),
+            label: const Text('Resume Face-off'),
+          ),
+        if (store.faceoffDone)
+          FilledButton.tonalIcon(
+            onPressed: () => go(AppPage.results),
+            icon: const Icon(Icons.emoji_events_outlined),
+            label: const Text('View final results'),
           ),
         ListTile(
           leading: Icon(
@@ -856,15 +857,96 @@ class Home extends StatelessWidget {
   );
 }
 
+class ProgressCard extends StatelessWidget {
+  const ProgressCard({
+    super.key,
+    required this.category,
+    required this.progress,
+    required this.remaining,
+  });
+
+  final NameCategory category;
+  final double progress;
+  final int remaining;
+
+  @override
+  Widget build(BuildContext context) {
+    final girls = category == NameCategory.girls;
+    final color = girls ? Palette.terra : Palette.forest;
+    final label = girls ? 'Girls' : 'Boys';
+    final percent = (progress * 100).round();
+    return Semantics(
+      label: '$label, $percent percent complete, $remaining names left',
+      child: Card(
+        elevation: 0,
+        color: girls ? const Color(0xffffe8d9) : const Color(0xffe1f0f3),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        child: Padding(
+          padding: const EdgeInsets.all(18),
+          child: Row(
+            children: [
+              SizedBox(
+                width: 72,
+                height: 72,
+                child: Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    SizedBox(
+                      width: 72,
+                      height: 72,
+                      child: CircularProgressIndicator(
+                        value: progress,
+                        strokeWidth: 8,
+                        backgroundColor: color.withValues(alpha: 0.16),
+                        color: color,
+                      ),
+                    ),
+                    Text('$percent%', style: TextStyle(color: color)),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 18),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '$label · $percent% complete',
+                      style: TextStyle(
+                        color: color,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text('$remaining names left'),
+                  ],
+                ),
+              ),
+              Icon(Icons.spa_outlined, color: color),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class Choosing extends StatelessWidget {
-  const Choosing({super.key, required this.store, required this.done});
+  const Choosing({
+    super.key,
+    required this.store,
+    required this.done,
+    this.back,
+  });
   final SessionStore store;
   final VoidCallback done;
+  final VoidCallback? back;
   @override
   Widget build(BuildContext context) {
     final candidate = store.current;
     if (candidate == null) {
       return Shell(
+        back: back,
         child: Center(
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -884,10 +966,17 @@ class Choosing extends StatelessWidget {
         ),
       );
     }
+    final categoryLabel = candidate.category == NameCategory.girls
+        ? 'Girls'
+        : 'Boys';
     return Shell(
+      back: back,
       child: Column(
         children: [
-          Text('${store.remaining(candidate.category).length} names left'),
+          Text(
+            '$categoryLabel · ${store.remaining(candidate.category).length} names left',
+            style: const TextStyle(fontWeight: FontWeight.w700),
+          ),
           const SizedBox(height: 16),
           Expanded(
             child: GestureDetector(
@@ -921,6 +1010,13 @@ class Choosing extends StatelessWidget {
                         ),
                         const SizedBox(height: 16),
                         Text(candidate.countries.join(' · ')),
+                        const SizedBox(height: 6),
+                        Text(
+                          'Ranked #${candidate.rank} in your selected pool',
+                          style: TextStyle(
+                            color: Palette.forest.withValues(alpha: 0.72),
+                          ),
+                        ),
                       ],
                     ),
                   ),
@@ -1152,7 +1248,14 @@ class Shortlist extends StatelessWidget {
             onPressed: custom,
             child: const Text('Add custom names'),
           ),
-          FilledButton(onPressed: faceoff, child: const Text('Start Face-off')),
+          FilledButton(
+            onPressed: store.canStartFaceoff ? faceoff : null,
+            child: Text(
+              store.canStartFaceoff
+                  ? 'Start Face-off'
+                  : 'Add two names to start Face-off',
+            ),
+          ),
         ],
       ),
     );
@@ -1234,11 +1337,53 @@ class _CustomNamesState extends State<CustomNames> {
           },
           child: const Text('Add name'),
         ),
-        Text('Girls: ${widget.store.customGirls.join(', ')}'),
-        Text('Boys: ${widget.store.customBoys.join(', ')}'),
+        _CustomList(
+          label: 'Girls',
+          names: widget.store.customGirls,
+          remove: (name) => setState(
+            () => widget.store.removeCustom(name, NameCategory.girls),
+          ),
+        ),
+        _CustomList(
+          label: 'Boys',
+          names: widget.store.customBoys,
+          remove: (name) => setState(
+            () => widget.store.removeCustom(name, NameCategory.boys),
+          ),
+        ),
         FilledButton(
-          onPressed: widget.done,
-          child: const Text('Continue to Face-off'),
+          onPressed: widget.store.canStartFaceoff ? widget.done : null,
+          child: Text(
+            widget.store.canStartFaceoff
+                ? 'Continue to Face-off'
+                : 'Add two names to continue',
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+class _CustomList extends StatelessWidget {
+  const _CustomList({
+    required this.label,
+    required this.names,
+    required this.remove,
+  });
+  final String label;
+  final List<String> names;
+  final ValueChanged<String> remove;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.only(top: 12),
+    child: Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: [
+        Text('$label: '),
+        ...names.map(
+          (name) => InputChip(label: Text(name), onDeleted: () => remove(name)),
         ),
       ],
     ),
@@ -1519,7 +1664,7 @@ class Results extends StatelessWidget {
         ...NameCategory.values.where(store.categories.contains).expand((
           category,
         ) {
-          final results = store.results(category);
+          final results = store.results(category).take(10).toList();
           return [
             Padding(
               padding: const EdgeInsets.only(top: 20, bottom: 8),

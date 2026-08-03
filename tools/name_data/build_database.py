@@ -12,6 +12,7 @@ from pathlib import Path
 from adapters.ssa_us import load_decade
 from adapters.insee_fr import load_decade as load_insee_decade
 from adapters.ine_es import load_decade as load_ine_es_decade
+from adapters.statcan_ca import load_decade as load_statcan_ca_decade
 
 ROOT = Path(__file__).resolve().parents[2]
 OUT = ROOT / 'assets/data'
@@ -52,9 +53,12 @@ def build():
     fr_rows = load_insee_decade(fr_archive) if fr_archive.exists() else None
     es_archive = ROOT / 'tools/name_data/raw_cache/ine_es'
     es_rows = load_ine_es_decade(es_archive) if es_archive.exists() else None
-    official_rows = {'US': us_rows, 'FR': fr_rows, 'ES': es_rows}
+    ca_archive = ROOT / 'tools/name_data/raw_cache/statcan_ca/17100147-eng.zip'
+    ca_rows = load_statcan_ca_decade(ca_archive) if ca_archive.exists() else None
+    official_rows = {'US': us_rows, 'CA': ca_rows, 'FR': fr_rows, 'ES': es_rows}
     official_metadata = {
         'US': ('US-ssa-national-names', 'Social Security Administration', 'https://www.ssa.gov/oact/babynames/limits.html', archive),
+        'CA': ('CA-statcan-first-names', 'Statistics Canada', 'https://www150.statcan.gc.ca/t1/tbl1/en/tv.action?pid=1710014701', ca_archive),
         'FR': ('FR-insee-national-names', 'INSEE', 'https://www.insee.fr/fr/statistiques/8894961', fr_archive),
         'ES': ('ES-ine-newborn-names', 'Instituto Nacional de Estadística', 'https://www.ine.es/dyngs/INEbase/es/operacion.htm?c=Estadistica_C&cid=1254736177009&idp=1254735572981&menu=resultados&secc=1254736195453', es_archive / 'nomnac24.xlsx'),
     }

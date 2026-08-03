@@ -1,5 +1,5 @@
 {
-  "build_id": "official-es-fr-plus-fixtures",
+  "build_id": "official-ca-es-fr-plus-fixtures",
   "contains_fixture_coverage": true,
   "countries": [
     {
@@ -34,13 +34,16 @@
     },
     {
       "code": "CA",
-      "coverage_limitations": "Not production data; import official cached source before release.",
+      "coverage_limitations": "Raw archive imported; redistribution licensing remains under review.",
       "covered_years": [
         2015,
         2024
       ],
-      "provider": "Development fixture; see sources.yaml",
-      "record_count_per_category": 100
+      "provider": "Statistics Canada",
+      "record_count_per_category": {
+        "boy": 35223,
+        "girl": 40176
+      }
     },
     {
       "code": "DE",
@@ -163,5 +166,5 @@
   "generated_at": "2026-08-02T00:00:00Z",
   "redistribution_review_required": true,
   "schema_version": 1,
-  "sqlite_sha256": "e91e1fa7671c3a70582fcce9859ea34500526b5026085a8fdc15d8373b69b0a3"
+  "sqlite_sha256": "9d109e6acff173606b5a6cce62301ba51217292cb36d7e8bc333d2cad27a7a1e"
 }

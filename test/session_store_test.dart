@@ -118,14 +118,37 @@ void main() {
     expect(store.faceoffDone, isFalse);
   });
 
+  test('faceoff requires two names in one category', () {
+    final store = testStore();
+    final candidate = store.candidates.first;
+    store.votes[candidate.id] = VoteValue.yes;
+    store.partnerVotes[candidate.id] = VoteValue.yes;
+
+    expect(store.canStartFaceoff, isFalse);
+    store.startFaceoff();
+
+    expect(store.faceoffStarted, isFalse);
+  });
+
   test('a custom name can enter both category lists', () {
     final store = testStore();
 
     expect(store.addCustom('Robin', NameCategory.values.toSet()), isTrue);
+    expect(store.addCustom('Arden', NameCategory.values.toSet()), isTrue);
     store.startFaceoff();
 
     expect(store.faceoffNames[NameCategory.girls], contains('Robin'));
     expect(store.faceoffNames[NameCategory.boys], contains('Robin'));
+  });
+
+  test('custom names can be removed only before Face-off starts', () {
+    final store = testStore();
+    store.addCustom('Robin', {NameCategory.girls});
+    expect(store.removeCustom('Robin', NameCategory.girls), isTrue);
+    store.addCustom('Robin', {NameCategory.girls});
+    store.addCustom('Arden', {NameCategory.girls});
+    store.startFaceoff();
+    expect(store.removeCustom('Robin', NameCategory.girls), isFalse);
   });
 
   test(

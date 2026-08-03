@@ -9,9 +9,9 @@
   notes: Names below the source privacy threshold are omitted.
 - country_code: CA
   provider: Statistics Canada
-  source_url: https://www150.statcan.gc.ca/
-  adapter: official_ranking
-  expected_format: csv_or_xlsx
+  source_url: https://www150.statcan.gc.ca/t1/tbl1/en/tv.action?pid=1710014701
+  adapter: statcan_ca
+  expected_format: zip_csv
   enabled: true
   license_status: review_before_release
 - country_code: BE
