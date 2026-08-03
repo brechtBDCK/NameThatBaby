@@ -11,7 +11,7 @@ import '../core/domain.dart';
 /// cannot query an asset directly. It is never downloaded or modified.
 class BundledNameRepository {
   static const _assetPath = 'assets/data/names.sqlite';
-  static const _databaseFileName = 'namethatbaby-names-v1.sqlite';
+  static const _databaseFileName = 'namethatbaby-names-v2.sqlite';
 
   Future<List<Candidate>> candidatePool({
     required Set<String> countries,
@@ -54,7 +54,7 @@ class BundledNameRepository {
     if (countries.isEmpty) return const {};
     final marks = List.filled(countries.length, '?').join(', ');
     final rows = await database.rawQuery(
-      '''SELECT source.country_code, name.id AS name_id, name.display_name,
+      '''SELECT source.country_code, source.id AS source_id, name.id AS name_id, name.display_name,
                 observation.year, observation.source_rank
          FROM name_observation AS observation
          JOIN data_source AS source ON source.id = observation.source_id
@@ -66,12 +66,14 @@ class BundledNameRepository {
         ...countries.toList()..sort(),
       ],
     );
-    final observations = <String, List<AnnualNameRanking>>{};
+    final observations = <String, Map<String, List<AnnualNameRanking>>>{};
     for (final row in rows) {
       final country = row['country_code']! as String;
+      final source = row['source_id']! as String;
       final nameId = row['name_id']! as int;
       observations
-          .putIfAbsent(country, () => [])
+          .putIfAbsent(country, () => {})
+          .putIfAbsent(source, () => [])
           .add(
             AnnualNameRanking(
               id: nameId * 2 + (category == NameCategory.girls ? 0 : 1),
@@ -85,7 +87,33 @@ class BundledNameRepository {
     }
     return {
       for (final entry in observations.entries)
-        entry.key: rankCountryDecade(entry.value),
+        entry.key: _rankCountry(entry.key, entry.value),
     };
+  }
+
+  List<Candidate> _rankCountry(
+    String country,
+    Map<String, List<AnnualNameRanking>> sources,
+  ) {
+    if (sources.length == 1) return rankCountryDecade(sources.values.single);
+    return equalCountryPool(
+          rankings: {
+            for (final entry in sources.entries)
+              entry.key: rankCountryDecade(entry.value),
+          },
+          seed: 0,
+          target: 150,
+          shuffle: false,
+        )
+        .map(
+          (candidate) => Candidate(
+            candidate.id,
+            candidate.name,
+            candidate.category,
+            [country],
+            candidate.rank,
+          ),
+        )
+        .toList();
   }
 }

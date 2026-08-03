@@ -33,6 +33,21 @@ void main() {
       ['FR', 'US'],
     );
   });
+  test('unshuffled country pool preserves round-robin rank order', () {
+    final pool = equalCountryPool(
+      rankings: {
+        'A': [
+          const Candidate(1, 'Ada', NameCategory.girls, ['A'], 1),
+        ],
+        'B': [
+          const Candidate(2, 'Bea', NameCategory.girls, ['B'], 1),
+        ],
+      },
+      seed: 1,
+      shuffle: false,
+    );
+    expect(pool.map((candidate) => candidate.name), ['Ada', 'Bea']);
+  });
   test('decade ranking uses score then the specified tie breakers', () {
     final ranked = rankCountryDecade([
       for (var year = 2015; year <= 2024; year++) ...[

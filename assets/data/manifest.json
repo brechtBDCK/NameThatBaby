@@ -1,5 +1,5 @@
 {
-  "build_id": "official-at-ca-dk-es-fr-ie-it-no-plus-fixtures",
+  "build_id": "official-at-au-be-ca-de-dk-es-fr-gb-ie-it-no-se-plus-fixtures",
   "contains_fixture_coverage": true,
   "countries": [
     {
@@ -17,23 +17,29 @@
     },
     {
       "code": "AU",
-      "coverage_limitations": "Not production data; import official cached source before release.",
+      "coverage_limitations": "NSW and Queensland coverage only; add other state and territory sources before national release.",
       "covered_years": [
         2015,
         2024
       ],
-      "provider": "Development fixture; see sources.yaml",
-      "record_count_per_category": 100
+      "provider": "New South Wales Registry of Births, Deaths and Marriages, Queensland Registry of Births, Deaths and Marriages",
+      "record_count_per_category": {
+        "boy": 2001,
+        "girl": 2000
+      }
     },
     {
       "code": "BE",
-      "coverage_limitations": "Not production data; import official cached source before release.",
+      "coverage_limitations": "One national 2015-2024 aggregate; annual source rows are not published.",
       "covered_years": [
-        2015,
+        2024,
         2024
       ],
-      "provider": "Development fixture; see sources.yaml",
-      "record_count_per_category": 100
+      "provider": "Statbel",
+      "record_count_per_category": {
+        "boy": 1689,
+        "girl": 1684
+      }
     },
     {
       "code": "CA",
@@ -50,13 +56,16 @@
     },
     {
       "code": "DE",
-      "coverage_limitations": "Not production data; import official cached source before release.",
+      "coverage_limitations": "GfdS national fallback; public top-ten lists only.",
       "covered_years": [
         2015,
         2024
       ],
-      "provider": "Development fixture; see sources.yaml",
-      "record_count_per_category": 100
+      "provider": "Gesellschaft f\u00fcr deutsche Sprache",
+      "record_count_per_category": {
+        "boy": 100,
+        "girl": 100
+      }
     },
     {
       "code": "DK",
@@ -99,13 +108,16 @@
     },
     {
       "code": "GB",
-      "coverage_limitations": "Not production data; import official cached source before release.",
+      "coverage_limitations": "Equal constituent coverage from England/Wales, Scotland, and Northern Ireland; redistribution licensing remains under review.",
       "covered_years": [
         2015,
         2024
       ],
-      "provider": "Development fixture; see sources.yaml",
-      "record_count_per_category": 100
+      "provider": "Office for National Statistics, National Records of Scotland, Northern Ireland Statistics and Research Agency",
+      "record_count_per_category": {
+        "boy": 76161,
+        "girl": 89499
+      }
     },
     {
       "code": "IE",
@@ -158,13 +170,16 @@
     },
     {
       "code": "SE",
-      "coverage_limitations": "Not production data; import official cached source before release.",
+      "coverage_limitations": "Raw archive imported; redistribution licensing remains under review.",
       "covered_years": [
         2015,
         2024
       ],
-      "provider": "Development fixture; see sources.yaml",
-      "record_count_per_category": 100
+      "provider": "Statistics Sweden and Institute for Language and Folklore",
+      "record_count_per_category": {
+        "boy": 18752,
+        "girl": 19956
+      }
     },
     {
       "code": "US",
@@ -181,5 +196,5 @@
   "generated_at": "2026-08-02T00:00:00Z",
   "redistribution_review_required": true,
   "schema_version": 1,
-  "sqlite_sha256": "082d32f9033b17d57d88dd845bcf71ae0830228c4cbde9fda7f4dadb1a81e835"
+  "sqlite_sha256": "3a89d40eaaf8edaecfc2e4e85e5d7a9d14ad72231f686c644353ed6c74090dce"
 }

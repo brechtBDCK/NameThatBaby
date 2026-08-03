@@ -112,6 +112,7 @@ List<Candidate> equalCountryPool({
   required Map<String, List<Candidate>> rankings,
   required int seed,
   int target = 150,
+  bool shuffle = true,
 }) {
   final countries = rankings.keys.toList()..sort();
   final origins = <String, Set<String>>{};
@@ -147,7 +148,7 @@ List<Candidate> equalCountryPool({
     }
     if (!progressed) break;
   }
-  selected.shuffle(Random(seed));
+  if (shuffle) selected.shuffle(Random(seed));
   return selected
       .map(
         (candidate) => Candidate(

@@ -16,11 +16,12 @@
   license_status: review_before_release
 - country_code: BE
   provider: Statbel
-  source_url: https://statbel.fgov.be/
-  adapter: official_ranking
-  expected_format: csv
+  source_url: https://statbel.fgov.be/en/open-data
+  adapter: statbel_be
+  expected_format: zip_pipe_txt
   enabled: true
   license_status: review_before_release
+  notes: Municipal counts aggregated nationally over 2015-2024; annual rows are not published.
 - country_code: NL
   provider: Sociale Verzekeringsbank
   source_url: https://www.svb.nl/
@@ -45,18 +46,20 @@
   license_status: review_before_release
 - country_code: SE
   provider: Statistics Sweden
-  source_url: https://www.scb.se/
-  adapter: official_ranking
-  expected_format: xlsx
+  source_url: https://www.statistikdatabasen.scb.se/pxweb/en/ssd/START__BE__BE0001__BE0001D/BE0001Nyfodda/
+  adapter: scb_se
+  expected_format: zip_csv
   enabled: true
   license_status: review_before_release
+  notes: SCB covers 2015-2022; ISOF publishes the 2023-2024 top-100 lists from the Tax Agency, grouping spelling variants.
 - country_code: DE
   provider: Gesellschaft für deutsche Sprache
-  source_url: https://gfds.de/
-  adapter: documented_fallback
+  source_url: https://gfds.de/vornamen/beliebteste-vornamen/
+  adapter: gfds_de
   expected_format: html
   enabled: true
   license_status: review_before_release
+  notes: Public annual top-ten first-name lists; GfdS is the documented national fallback because Germany has no official national series.
 - country_code: FR
   provider: INSEE
   source_url: https://www.insee.fr/fr/statistiques/8894961
@@ -91,11 +94,12 @@
   notes: National ranks are derived from the published district-level birth counts; source normalization groups diacritic variants.
 - country_code: GB
   provider: ONS, NRS, NISRA
-  source_url: https://www.ons.gov.uk/
-  adapter: uk_aggregate
-  expected_format: csv
+  source_url: https://www.ons.gov.uk/peoplepopulationandcommunity/birthsdeathsandmarriages/livebirths/datasets/babynamesinenglandandwalesfrom1996/1996to2024
+  adapter: uk_gb
+  expected_format: xlsx_zip_csv
   enabled: true
   license_status: review_before_release
+  notes: England/Wales, Scotland, and Northern Ireland are parsed separately and round-robined equally into GB.
 - country_code: IE
   provider: Central Statistics Office
   source_url: https://ws.cso.ie/public/api.restful/PxStat.Data.Cube_API.ReadDataset/VSA50/CSV/1.0/en
@@ -105,9 +109,10 @@
   license_status: review_before_release
   notes: National first-name counts and ranks; imports the published top 500 per category/year.
 - country_code: AU
-  provider: State and territory birth registries
-  source_url: https://www.abs.gov.au/
-  adapter: au_aggregate
-  expected_format: csv
+  provider: New South Wales and Queensland Registries of Births, Deaths and Marriages
+  source_url: https://data.nsw.gov.au/data/dataset/popular-baby-names-from-1952
+  adapter: nsw_au,qld_au
+  expected_format: csv,json
   enabled: true
   license_status: review_before_release
+  notes: NSW and Queensland official coverage for 2015-2024; add other state and territory registries before national release.
