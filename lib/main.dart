@@ -6,11 +6,13 @@ import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
 import 'app/theme.dart';
+import 'app/shell.dart';
 import 'core/domain.dart';
 import 'core/qr_frames.dart';
 import 'core/qr_protocol.dart';
 import 'core/session_store.dart';
 import 'data/bundled_name_repository.dart';
+import 'features/home/progress_card.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -136,8 +138,8 @@ class _AppShellState extends State<AppShell> {
         return SyncVotes(
           store: widget.store,
           custom: true,
-          done: () {
-            widget.store.startFaceoff();
+          done: () async {
+            await widget.store.startFaceoff();
             go(AppPage.faceoff);
           },
           scan: () => go(AppPage.scanCustomUpdate),
@@ -184,124 +186,6 @@ class _AppShellState extends State<AppShell> {
         return Recovery(store: widget.store, done: () => go(AppPage.welcome));
     }
   }
-}
-
-class Shell extends StatelessWidget {
-  const Shell({super.key, required this.child, this.back});
-  final Widget child;
-  final VoidCallback? back;
-  @override
-  Widget build(BuildContext context) => Scaffold(
-    appBar: back == null
-        ? null
-        : AppBar(
-            backgroundColor: Colors.transparent,
-            leading: IconButton(
-              icon: const Icon(Icons.arrow_back),
-              onPressed: back,
-              tooltip: 'Back',
-            ),
-          ),
-    body: SafeArea(
-      child: Stack(
-        children: [
-          const Positioned(
-            top: -10,
-            left: -8,
-            child: ExcludeSemantics(
-              child: IgnorePointer(child: BotanicalSprig(flip: false)),
-            ),
-          ),
-          const Positioned(
-            right: -8,
-            bottom: -10,
-            child: ExcludeSemantics(
-              child: IgnorePointer(child: BotanicalSprig(flip: true)),
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(24, 20, 24, 16),
-            child: child,
-          ),
-        ],
-      ),
-    ),
-  );
-}
-
-class BotanicalSprig extends StatelessWidget {
-  const BotanicalSprig({super.key, required this.flip});
-  final bool flip;
-
-  @override
-  Widget build(BuildContext context) => Transform(
-    alignment: Alignment.center,
-    transform: Matrix4.diagonal3Values(flip ? -1 : 1, flip ? -1 : 1, 1),
-    child: CustomPaint(size: const Size(128, 128), painter: _SprigPainter()),
-  );
-}
-
-Widget scannerError(
-  BuildContext context,
-  MobileScannerException error,
-) => Center(
-  child: Padding(
-    padding: const EdgeInsets.all(24),
-    child: Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        const Icon(
-          Icons.no_photography_outlined,
-          size: 48,
-          color: Palette.terra,
-        ),
-        const SizedBox(height: 12),
-        Text(
-          error.errorCode == MobileScannerErrorCode.permissionDenied
-              ? 'Camera access is turned off. Enable camera access for NameThatBaby in your phone settings, then try again.'
-              : 'The camera scanner is unavailable. Close this screen and try again.',
-          textAlign: TextAlign.center,
-        ),
-      ],
-    ),
-  ),
-);
-
-class _SprigPainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    final stem = Paint()
-      ..color = Palette.forest.withValues(alpha: 0.55)
-      ..strokeWidth = 3
-      ..style = PaintingStyle.stroke
-      ..strokeCap = StrokeCap.round;
-    final leaf = Paint()..color = Palette.forest.withValues(alpha: 0.5);
-    final berry = Paint()..color = Palette.gold.withValues(alpha: 0.7);
-    final path = Path()
-      ..moveTo(-4, size.height + 4)
-      ..quadraticBezierTo(50, 66, 112, 12);
-    canvas.drawPath(path, stem);
-    for (final point in <Offset>[
-      const Offset(24, 88),
-      const Offset(48, 64),
-      const Offset(72, 42),
-      const Offset(94, 25),
-    ]) {
-      canvas.save();
-      canvas.translate(point.dx, point.dy);
-      canvas.rotate(-0.7);
-      canvas.drawOval(
-        Rect.fromCenter(center: Offset.zero, width: 14, height: 30),
-        leaf,
-      );
-      canvas.restore();
-    }
-    canvas.drawCircle(const Offset(80, 34), 5, berry);
-    canvas.drawCircle(const Offset(101, 16), 4, berry);
-  }
-
-  @override
-  bool shouldRepaint(covariant _SprigPainter oldDelegate) => false;
 }
 
 class Welcome extends StatelessWidget {
@@ -893,80 +777,6 @@ class Home extends StatelessWidget {
   );
 }
 
-class ProgressCard extends StatelessWidget {
-  const ProgressCard({
-    super.key,
-    required this.category,
-    required this.progress,
-    required this.remaining,
-  });
-
-  final NameCategory category;
-  final double progress;
-  final int remaining;
-
-  @override
-  Widget build(BuildContext context) {
-    final girls = category == NameCategory.girls;
-    final color = girls ? Palette.terra : Palette.forest;
-    final label = girls ? 'Girls' : 'Boys';
-    final percent = (progress * 100).round();
-    return Semantics(
-      label: '$label, $percent percent complete, $remaining names left',
-      child: Card(
-        elevation: 0,
-        color: girls ? const Color(0xffffe8d9) : const Color(0xffe1f0f3),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-        child: Padding(
-          padding: const EdgeInsets.all(18),
-          child: Row(
-            children: [
-              SizedBox(
-                width: 72,
-                height: 72,
-                child: Stack(
-                  alignment: Alignment.center,
-                  children: [
-                    SizedBox(
-                      width: 72,
-                      height: 72,
-                      child: CircularProgressIndicator(
-                        value: progress,
-                        strokeWidth: 8,
-                        backgroundColor: color.withValues(alpha: 0.16),
-                        color: color,
-                      ),
-                    ),
-                    Text('$percent%', style: TextStyle(color: color)),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 18),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      '$label · $percent% complete',
-                      style: TextStyle(
-                        color: color,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text('$remaining names left'),
-                  ],
-                ),
-              ),
-              Icon(Icons.spa_outlined, color: color),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
 class Choosing extends StatelessWidget {
   const Choosing({
     super.key,
@@ -1306,36 +1116,38 @@ class Shortlist extends StatelessWidget {
           Text('$strong strong · ${entries.length - strong} consider'),
           Expanded(
             child: ListView(
-              children: NameCategory.values
-                  .where(store.categories.contains)
-                  .expand((category) {
-                    final categoryEntries = entries
-                        .where((entry) => entry.category == category)
-                        .toList();
-                    final categoryStrong = categoryEntries
-                        .where(
-                          (entry) =>
-                              matchTier(
-                                store.votes[entry.id]!,
-                                store.partnerVotes[entry.id]!,
-                              ) ==
-                              MatchTier.strong,
-                        )
-                        .length;
-                    return [
-                      Padding(
+              children: [
+                for (final category in NameCategory.values.where(
+                  store.categories.contains,
+                )) ...[
+                  Builder(
+                    builder: (context) {
+                      final categoryEntries = entries
+                          .where((entry) => entry.category == category)
+                          .toList();
+                      final categoryStrong = categoryEntries
+                          .where(
+                            (entry) =>
+                                matchTier(
+                                  store.votes[entry.id]!,
+                                  store.partnerVotes[entry.id]!,
+                                ) ==
+                                MatchTier.strong,
+                          )
+                          .length;
+                      return Padding(
                         padding: const EdgeInsets.only(top: 12, bottom: 4),
                         child: Text(
                           '${category == NameCategory.girls ? 'Girls' : 'Boys'} · $categoryStrong Strong · ${categoryEntries.length - categoryStrong} Consider',
                           style: Theme.of(context).textTheme.titleMedium,
                         ),
-                      ),
-                      ...categoryEntries,
-                    ];
-                  })
-                  .map((value) {
-                    final entry = value as Candidate;
-                    return Card(
+                      );
+                    },
+                  ),
+                  for (final entry in entries.where(
+                    (entry) => entry.category == category,
+                  ))
+                    Card(
                       child: ListTile(
                         title: Text(entry.name),
                         subtitle: Text(
@@ -1353,9 +1165,9 @@ class Shortlist extends StatelessWidget {
                           ),
                         ),
                       ),
-                    );
-                  })
-                  .toList(),
+                    ),
+                ],
+              ],
             ),
           ),
           OutlinedButton(

@@ -205,6 +205,56 @@ void main() {
     expect(creator.partnerVotesReceived, isFalse);
   });
 
+  test('a failed import retains the last accepted replay boundary', () async {
+    final state = FailingState();
+    final creator = testStore(state: state);
+    await creator.ensureSession();
+    final partner = testStore();
+    await partner.importInvite(creator.invitePayload());
+    await creator.importPairAccept(await partner.pairAcceptPayload());
+    final first = await partner.voteUpdatePayload();
+    await creator.importVoteUpdate(first);
+    await partner.vote(VoteValue.yes);
+    state.failWrites = true;
+
+    await expectLater(
+      creator.importVoteUpdate(await partner.voteUpdatePayload()),
+      throwsA(isA<StateError>()),
+    );
+
+    expect(creator.highestAcceptedSequence[partner.localParticipantId], 2);
+  });
+
+  test('a failed pairing acceptance leaves no partial partner state', () async {
+    final state = FailingState();
+    final creator = testStore(state: state);
+    await creator.ensureSession();
+    final partner = testStore();
+    await partner.importInvite(creator.invitePayload());
+    state.failWrites = true;
+
+    await expectLater(
+      creator.importPairAccept(await partner.pairAcceptPayload()),
+      throwsA(isA<StateError>()),
+    );
+
+    expect(creator.partnerParticipantId, isNull);
+    expect(creator.paired, isFalse);
+    expect(creator.highestAcceptedSequence, isEmpty);
+  });
+
+  test('Face-off setup is not retained when its initial write fails', () async {
+    final state = FailingState();
+    final store = testStore(state: state);
+    await store.addCustom('Robin', {NameCategory.girls});
+    await store.addCustom('Arden', {NameCategory.girls});
+    state.failWrites = true;
+
+    await expectLater(store.startFaceoff(), throwsA(isA<StateError>()));
+
+    expect(store.faceoffStarted, isFalse);
+  });
+
   test('a failed Face-off import restores the active round', () async {
     final state = FailingState();
     final first = testStore(state: state);

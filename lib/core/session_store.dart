@@ -441,8 +441,9 @@ class SessionStore extends ChangeNotifier {
       faceoffCategory != null &&
       faceoffTieBreakEntries.containsKey(faceoffCategory);
 
-  void startFaceoff() {
+  Future<void> startFaceoff() async {
     if (faceoffStarted || !customNamesConverged) return;
+    final before = _faceoffSnapshot();
     for (final category in categories) {
       final entries = _faceoffEntries(category);
       if (entries.names.length >= 2) {
@@ -460,7 +461,13 @@ class SessionStore extends ChangeNotifier {
     }
     faceoffRound = 0;
     _prepareNextCategory();
-    _changed();
+    try {
+      await _changed();
+    } catch (_) {
+      _restoreFaceoff(before);
+      notifyListeners();
+      rethrow;
+    }
   }
 
   ({List<String> names, Map<String, int> seedTiers}) _faceoffEntries(
@@ -793,10 +800,26 @@ class SessionStore extends ChangeNotifier {
     if (payload['participant'] != source) {
       throw const QrProtocolError('This pairing confirmation is invalid.');
     }
-    partnerParticipantId = source;
-    paired = true;
-    _acceptEvent(source, sequence);
-    await _persist();
+    final oldPartner = partnerParticipantId;
+    final oldPaired = paired;
+    final oldApplied = Set<String>.from(appliedEventIds);
+    final oldHighest = Map<String, int>.from(highestAcceptedSequence);
+    try {
+      partnerParticipantId = source;
+      paired = true;
+      _acceptEvent(source, sequence);
+      await _persist();
+    } catch (_) {
+      partnerParticipantId = oldPartner;
+      paired = oldPaired;
+      appliedEventIds
+        ..clear()
+        ..addAll(oldApplied);
+      highestAcceptedSequence
+        ..clear()
+        ..addAll(oldHighest);
+      rethrow;
+    }
     notifyListeners();
   }
 
@@ -815,7 +838,6 @@ class SessionStore extends ChangeNotifier {
     final sequence = decoded['sequence'] as int;
     final source = decoded['source'] as String;
     _validatePartnerEvent(source, sequence);
-    final eventId = '$source:$sequence';
     final payload = decoded['payload'] as Map<String, Object?>;
     final importedVotes = payload['votes'];
     if (importedVotes is! Map || importedVotes.length > candidates.length) {
@@ -834,6 +856,8 @@ class SessionStore extends ChangeNotifier {
     final oldVotes = Map<int, VoteValue>.from(partnerVotes);
     final oldPartner = partnerParticipantId;
     final oldReceived = partnerVotesReceived;
+    final oldApplied = Set<String>.from(appliedEventIds);
+    final oldHighest = Map<String, int>.from(highestAcceptedSequence);
     try {
       partnerVotes
         ..clear()
@@ -848,8 +872,12 @@ class SessionStore extends ChangeNotifier {
         ..addAll(oldVotes);
       partnerParticipantId = oldPartner;
       partnerVotesReceived = oldReceived;
-      appliedEventIds.remove(eventId);
-      highestAcceptedSequence.remove(source);
+      appliedEventIds
+        ..clear()
+        ..addAll(oldApplied);
+      highestAcceptedSequence
+        ..clear()
+        ..addAll(oldHighest);
       rethrow;
     }
     notifyListeners();

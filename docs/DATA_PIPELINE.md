@@ -6,7 +6,7 @@ The builder retains the full observations only while deriving decade scores, the
 materializes at most 150 ranked names per country/category in
 `country_decade_ranking` for the runtime asset. Source metadata remains in
 `data_source`; raw observations remain reproducible from ignored cached inputs.
-The current compact asset is 224 KiB (previous observation-table asset: 60 MiB).
+The current compact asset is 228 KiB (previous observation-table asset: 60 MiB).
 On this workspace, a representative three-country ranking query averages 0.227
 ms over 100 warm SQLite queries. `test_deterministic_build.py` rebuilds twice
 from the same cached inputs and compares checksums.
