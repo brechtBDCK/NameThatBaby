@@ -11,6 +11,21 @@ void main() {
     expect(find.text('Private & offline'), findsOneWidget);
   });
 
+  testWidgets('camera recovery explains how to reopen scanning', (
+    tester,
+  ) async {
+    await tester.pumpWidget(const MaterialApp(home: CameraRecovery()));
+
+    expect(
+      find.text('Camera access is needed to scan a code.'),
+      findsOneWidget,
+    );
+    expect(
+      find.textContaining('enable Camera in Android Settings'),
+      findsOneWidget,
+    );
+  });
+
   testWidgets('bundled data coverage is available locally', (tester) async {
     await tester.pumpWidget(MaterialApp(home: DataSources(back: () {})));
     await tester.pumpAndSettle();

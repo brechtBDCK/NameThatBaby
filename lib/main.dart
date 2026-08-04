@@ -33,6 +33,48 @@ Future<void> main() async {
   runApp(NameThatBaby(store: store));
 }
 
+Widget scannerPlaceholder(BuildContext context) => const CameraRecovery();
+
+Widget scannerError(BuildContext context, MobileScannerException error) =>
+    const CameraRecovery();
+
+class CameraRecovery extends StatelessWidget {
+  const CameraRecovery({super.key});
+
+  @override
+  Widget build(BuildContext context) => Semantics(
+    label:
+        'Camera unavailable. Allow camera access, then close and reopen the scanner.',
+    child: ColoredBox(
+      color: Palette.surface,
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(
+              Icons.camera_alt_outlined,
+              size: 44,
+              color: Palette.forest,
+            ),
+            const SizedBox(height: 12),
+            const Text(
+              'Camera access is needed to scan a code.',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'Allow camera access when Android asks. If you denied it, enable Camera in Android Settings, then close and reopen this scanner.',
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
+}
+
 class NameThatBaby extends StatelessWidget {
   const NameThatBaby({super.key, required this.store});
   final SessionStore store;
@@ -498,7 +540,11 @@ class _ScanPairAcceptState extends State<ScanPairAccept> {
         Expanded(
           child: ClipRRect(
             borderRadius: BorderRadius.circular(28),
-            child: MobileScanner(onDetect: scan, errorBuilder: scannerError),
+            child: MobileScanner(
+              onDetect: scan,
+              errorBuilder: scannerError,
+              placeholderBuilder: scannerPlaceholder,
+            ),
           ),
         ),
         if (error != null)
@@ -568,7 +614,11 @@ class _ScanInviteState extends State<ScanInvite> {
         Expanded(
           child: ClipRRect(
             borderRadius: BorderRadius.circular(28),
-            child: MobileScanner(onDetect: scan, errorBuilder: scannerError),
+            child: MobileScanner(
+              onDetect: scan,
+              errorBuilder: scannerError,
+              placeholderBuilder: scannerPlaceholder,
+            ),
           ),
         ),
         if (error != null)
@@ -666,7 +716,11 @@ class _ScanUpdateState extends State<ScanUpdate> {
         Expanded(
           child: ClipRRect(
             borderRadius: BorderRadius.circular(28),
-            child: MobileScanner(onDetect: scan, errorBuilder: scannerError),
+            child: MobileScanner(
+              onDetect: scan,
+              errorBuilder: scannerError,
+              placeholderBuilder: scannerPlaceholder,
+            ),
           ),
         ),
         if (error != null)
@@ -1542,6 +1596,7 @@ class _FaceoffRoundSyncState extends State<FaceoffRoundSync> {
                 child: MobileScanner(
                   onDetect: scan,
                   errorBuilder: scannerError,
+                  placeholderBuilder: scannerPlaceholder,
                 ),
               ),
             ),
