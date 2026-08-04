@@ -44,5 +44,12 @@ app.*.map.json
 /android/app/profile
 /android/app/release
 
+# Local signing and provisioning material. Supply these outside Git for a release.
+/android/key.properties
+*.jks
+*.keystore
+*.p12
+*.mobileprovision
+
 # Build-time source downloads. They can carry terms, cookies, or transient URLs.
 /tools/name_data/raw_cache/
