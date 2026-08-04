@@ -53,3 +53,5 @@ app.*.map.json
 
 # Build-time source downloads. They can carry terms, cookies, or transient URLs.
 /tools/name_data/raw_cache/
+NameThatBaby-Android-Beta-Goal.md
+NameThatBaby-Android-Beta-Codex-Prompt.md
