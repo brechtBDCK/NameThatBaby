@@ -244,10 +244,16 @@ class SessionStore extends ChangeNotifier {
             candidate.category == category && !votes.containsKey(candidate.id),
       )
       .toList();
-  Candidate? get current => enabled.cast<Candidate?>().firstWhere(
-    (candidate) => candidate != null && !votes.containsKey(candidate.id),
-    orElse: () => null,
-  );
+  Candidate? get current => currentFor();
+  Candidate? currentFor([NameCategory? category]) => enabled
+      .cast<Candidate?>()
+      .firstWhere(
+        (candidate) =>
+            candidate != null &&
+            (category == null || candidate.category == category) &&
+            !votes.containsKey(candidate.id),
+        orElse: () => null,
+      );
   double progress(NameCategory category) {
     final total = enabled
         .where((candidate) => candidate.category == category)
@@ -258,6 +264,7 @@ class SessionStore extends ChangeNotifier {
   bool get choosingDone => current == null;
   bool get hasSession => sessionId.isNotEmpty && _secret != null;
   bool get hasPartner => partnerParticipantId != null;
+  bool get canEditSelection => !paired && votes.isEmpty;
   Future<String?> confirmationCode() async {
     final partner = partnerParticipantId;
     if (!hasSession || partner == null) return null;
@@ -379,22 +386,24 @@ class SessionStore extends ChangeNotifier {
     notifyListeners();
   }
 
-  void toggleCountry(String code) {
+  Future<void> toggleCountry(String code) async {
     if (countries.contains(code) && countries.length > 1) {
       countries.remove(code);
     } else {
       countries.add(code);
     }
-    _changed();
+    if (hasSession) await _loadCandidates();
+    await _changed();
   }
 
-  void toggleCategory(NameCategory category) {
+  Future<void> toggleCategory(NameCategory category) async {
     if (categories.contains(category) && categories.length > 1) {
       categories.remove(category);
     } else {
       categories.add(category);
     }
-    _changed();
+    if (hasSession) await _loadCandidates();
+    await _changed();
   }
 
   Future<void> vote(VoteValue value) async {

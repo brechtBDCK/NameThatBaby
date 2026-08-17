@@ -59,6 +59,18 @@ class BotanicalSprig extends StatelessWidget {
   );
 }
 
+/// App mark from the NameThatBaby visual identity: two leaves and a seed.
+class BrandMark extends StatelessWidget {
+  const BrandMark({super.key, this.size = 96});
+  final double size;
+
+  @override
+  Widget build(BuildContext context) => CustomPaint(
+    size: Size(size, size),
+    painter: _BrandMarkPainter(),
+  );
+}
+
 Widget scannerError(
   BuildContext context,
   MobileScannerException error,
@@ -120,4 +132,31 @@ class _SprigPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _SprigPainter oldDelegate) => false;
+}
+
+class _BrandMarkPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final scale = size.width / 96;
+    canvas.scale(scale, scale);
+    final terra = Paint()..color = Palette.terra;
+    final forest = Paint()..color = Palette.forest;
+    final gold = Paint()..color = Palette.gold;
+    final leftLeaf = Path()
+      ..moveTo(43, 66)
+      ..cubicTo(17, 57, 13, 28, 27, 13)
+      ..cubicTo(49, 24, 61, 45, 43, 66)
+      ..close();
+    final rightLeaf = Path()
+      ..moveTo(47, 67)
+      ..cubicTo(51, 35, 69, 22, 84, 21)
+      ..cubicTo(89, 49, 72, 68, 47, 67)
+      ..close();
+    canvas.drawPath(leftLeaf, terra);
+    canvas.drawPath(rightLeaf, forest);
+    canvas.drawCircle(const Offset(62, 13), 11, gold);
+  }
+
+  @override
+  bool shouldRepaint(covariant _BrandMarkPainter oldDelegate) => false;
 }

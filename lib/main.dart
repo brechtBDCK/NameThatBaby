@@ -7,6 +7,7 @@ import 'package:qr_flutter/qr_flutter.dart';
 
 import 'app/theme.dart';
 import 'app/shell.dart';
+import 'app/soundscape.dart';
 import 'core/domain.dart';
 import 'core/qr_frames.dart';
 import 'core/qr_protocol.dart';
@@ -31,6 +32,7 @@ Future<void> main() async {
   );
   await store.restore();
   runApp(NameThatBaby(store: store));
+  Soundscape.start();
 }
 
 Widget scannerPlaceholder(BuildContext context) => const CameraRecovery();
@@ -125,22 +127,27 @@ class _AppShellState extends State<AppShell> {
       : widget.store.hasSession
       ? AppPage.home
       : AppPage.welcome;
+  var editingSetup = false;
+  NameCategory? choosingCategory;
   void go(AppPage value) => setState(() => page = value);
   @override
   Widget build(BuildContext context) {
     switch (page) {
       case AppPage.welcome:
         return Welcome(
-          create: () => go(AppPage.setup),
+          create: () {
+            editingSetup = false;
+            go(AppPage.setup);
+          },
           join: () => go(AppPage.scan),
         );
       case AppPage.setup:
         return Setup(
           store: widget.store,
+          back: editingSetup ? () => go(AppPage.home) : null,
           done: () async {
             await widget.store.ensureSession();
-            widget.store.join();
-            go(AppPage.invite);
+            go(editingSetup ? AppPage.home : AppPage.invite);
           },
         );
       case AppPage.invite:
@@ -187,10 +194,22 @@ class _AppShellState extends State<AppShell> {
           scan: () => go(AppPage.scanCustomUpdate),
         );
       case AppPage.home:
-        return Home(store: widget.store, go: go);
+        return Home(
+          store: widget.store,
+          go: go,
+          choose: (category) {
+            choosingCategory = category;
+            go(AppPage.choosing);
+          },
+          editSelection: () {
+            editingSetup = true;
+            go(AppPage.setup);
+          },
+        );
       case AppPage.choosing:
         return Choosing(
           store: widget.store,
+          category: choosingCategory,
           done: () =>
               go(widget.store.choosingDone ? AppPage.sync : AppPage.home),
           back: () => go(AppPage.home),
@@ -200,6 +219,7 @@ class _AppShellState extends State<AppShell> {
           store: widget.store,
           done: () => go(AppPage.shortlist),
           scan: () => go(AppPage.scanUpdate),
+          back: () => go(AppPage.home),
         );
       case AppPage.shortlist:
         return Shortlist(
@@ -239,7 +259,7 @@ class Welcome extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         const Spacer(),
-        const Icon(Icons.local_florist, size: 86, color: Palette.terra),
+        const BrandMark(size: 96),
         const SizedBox(height: 16),
         Text(
           'NameThatBaby',
@@ -274,9 +294,10 @@ class Welcome extends StatelessWidget {
 }
 
 class Setup extends StatelessWidget {
-  const Setup({super.key, required this.store, required this.done});
+  const Setup({super.key, required this.store, required this.done, this.back});
   final SessionStore store;
   final Future<void> Function() done;
+  final VoidCallback? back;
   static const countries = {
     'US': 'United States',
     'CA': 'Canada',
@@ -296,6 +317,7 @@ class Setup extends StatelessWidget {
   };
   @override
   Widget build(BuildContext context) => Shell(
+    back: back,
     child: ListView(
       children: [
         Text(
@@ -335,7 +357,9 @@ class Setup extends StatelessWidget {
         ),
         FilledButton(
           onPressed: done,
-          child: const Text('Create private session'),
+          child: Text(
+            store.hasSession ? 'Save selection' : 'Create private session',
+          ),
         ),
       ],
     ),
@@ -734,9 +758,17 @@ class _ScanUpdateState extends State<ScanUpdate> {
 }
 
 class Home extends StatelessWidget {
-  const Home({super.key, required this.store, required this.go});
+  const Home({
+    super.key,
+    required this.store,
+    required this.go,
+    this.choose,
+    this.editSelection,
+  });
   final SessionStore store;
   final void Function(AppPage) go;
+  final ValueChanged<NameCategory>? choose;
+  final VoidCallback? editSelection;
   @override
   Widget build(BuildContext context) => Shell(
     child: ListView(
@@ -759,16 +791,27 @@ class Home extends StatelessWidget {
               ),
             ),
         const SizedBox(height: 12),
-        FilledButton(
-          onPressed: () => go(AppPage.choosing),
-          child: Text(
-            store.choosingDone ? 'Choices complete' : 'Continue choosing',
+        for (final category in NameCategory.values.where(
+          store.categories.contains,
+        ))
+          FilledButton(
+            onPressed: store.remaining(category).isEmpty
+                ? null
+                : () => choose?.call(category) ?? go(AppPage.choosing),
+            child: Text(
+              'Continue choosing ${category == NameCategory.girls ? 'girl' : 'boy'} names',
+            ),
           ),
-        ),
         if (store.choosingDone)
           OutlinedButton(
             onPressed: () => go(AppPage.sync),
             child: const Text('Synchronize choices'),
+          ),
+        if (store.canEditSelection)
+          OutlinedButton.icon(
+            onPressed: editSelection,
+            icon: const Icon(Icons.tune),
+            label: const Text('Adjust countries and name types'),
           ),
         if (store.partnerVotesReceived)
           FilledButton.tonalIcon(
@@ -831,35 +874,73 @@ class Home extends StatelessWidget {
   );
 }
 
-class Choosing extends StatelessWidget {
+class Choosing extends StatefulWidget {
   const Choosing({
     super.key,
     required this.store,
     required this.done,
     this.back,
+    this.category,
   });
   final SessionStore store;
   final VoidCallback done;
   final VoidCallback? back;
+  final NameCategory? category;
+
+  @override
+  State<Choosing> createState() => _ChoosingState();
+}
+
+class _ChoosingState extends State<Choosing> {
+  Offset _slide = Offset.zero;
+  var _choosing = false;
+
+  Future<void> _vote(VoteValue vote) async {
+    if (_choosing || widget.store.isSaving) return;
+    setState(() {
+      _choosing = true;
+      _slide = switch (vote) {
+        VoteValue.no => const Offset(-1.3, 0),
+        VoteValue.maybe => const Offset(0, 1.3),
+        VoteValue.yes => const Offset(1.3, 0),
+      };
+    });
+    HapticFeedback.selectionClick();
+    SystemSound.play(SystemSoundType.click);
+    await Future<void>.delayed(const Duration(seconds: 1));
+    await widget.store.vote(vote);
+    if (mounted) setState(() {
+      _slide = Offset.zero;
+      _choosing = false;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
-    final candidate = store.current;
+    final store = widget.store;
+    final candidate = store.currentFor(widget.category);
     if (candidate == null) {
       return Shell(
-        back: back,
+        back: widget.back,
         child: Center(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               const Icon(Icons.celebration, size: 64, color: Palette.gold),
-              const Text(
-                'Your choices are ready',
+              Text(
+                store.choosingDone
+                    ? 'Your choices are ready'
+                    : 'This group is complete',
                 style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold),
               ),
               const SizedBox(height: 12),
               FilledButton(
-                onPressed: done,
-                child: const Text('Synchronize with partner'),
+                onPressed: widget.done,
+                child: Text(
+                  store.choosingDone
+                      ? 'Synchronize with partner'
+                      : 'Choose another group',
+                ),
               ),
             ],
           ),
@@ -870,7 +951,7 @@ class Choosing extends StatelessWidget {
         ? 'Girls'
         : 'Boys';
     return Shell(
-      back: back,
+      back: widget.back,
       child: Column(
         children: [
           Text(
@@ -881,45 +962,48 @@ class Choosing extends StatelessWidget {
           Expanded(
             child: GestureDetector(
               onHorizontalDragEnd: (details) {
-                if (store.isSaving) return;
+                if (_choosing || store.isSaving) return;
                 final velocity = details.primaryVelocity ?? 0;
                 if (velocity.abs() < 350) return;
-                HapticFeedback.selectionClick();
-                store.vote(velocity < 0 ? VoteValue.no : VoteValue.yes);
+                _vote(velocity < 0 ? VoteValue.no : VoteValue.yes);
               },
               onVerticalDragEnd: (details) {
-                if (store.isSaving) return;
+                if (_choosing || store.isSaving) return;
                 final velocity = details.primaryVelocity ?? 0;
-                if (velocity > -350) return;
-                HapticFeedback.selectionClick();
-                store.vote(VoteValue.maybe);
+                if (velocity < 350) return;
+                _vote(VoteValue.maybe);
               },
               child: Semantics(
                 label:
-                    '${candidate.name}, ${candidate.category == NameCategory.girls ? 'girls' : 'boys'}, ${store.remaining(candidate.category).length} names remaining. Swipe left for No, up for Maybe, or right for Yes.',
-                child: Card(
-                  color: Palette.surface,
-                  child: Center(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Icon(Icons.spa, color: Palette.forest),
-                        const SizedBox(height: 16),
-                        Text(
-                          candidate.name,
-                          style: Theme.of(context).textTheme.displayLarge!
-                              .copyWith(fontWeight: FontWeight.w800),
-                        ),
-                        const SizedBox(height: 16),
-                        Text(candidate.countries.join(' · ')),
-                        const SizedBox(height: 6),
-                        Text(
-                          'Ranked #${candidate.rank} in your selected pool',
-                          style: TextStyle(
-                            color: Palette.forest.withValues(alpha: 0.72),
+                    '${candidate.name}, ${candidate.category == NameCategory.girls ? 'girls' : 'boys'}, ${store.remaining(candidate.category).length} names remaining. Swipe left for No, down for Maybe, or right for Yes.',
+                child: AnimatedSlide(
+                  offset: _slide,
+                  duration: const Duration(seconds: 1),
+                  curve: Curves.easeInOutCubic,
+                  child: Card(
+                    color: Palette.surface,
+                    child: Center(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.spa, color: Palette.forest),
+                          const SizedBox(height: 16),
+                          Text(
+                            candidate.name,
+                            style: Theme.of(context).textTheme.displayLarge!
+                                .copyWith(fontWeight: FontWeight.w800),
                           ),
-                        ),
-                      ],
+                          const SizedBox(height: 16),
+                          Text(candidate.countries.join(' · ')),
+                          const SizedBox(height: 6),
+                          Text(
+                            'Ranked #${candidate.rank} in your selected pool',
+                            style: TextStyle(
+                              color: Palette.forest.withValues(alpha: 0.72),
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 ),
@@ -934,26 +1018,30 @@ class Choosing extends StatelessWidget {
                 icon: Icons.close,
                 label: 'No',
                 color: Palette.terra,
-                onTap: store.isSaving ? null : () => store.vote(VoteValue.no),
+                onTap: _choosing || store.isSaving
+                    ? null
+                    : () => _vote(VoteValue.no),
               ),
               Decision(
                 icon: Icons.question_mark,
                 label: 'Maybe',
                 color: Palette.gold,
-                onTap: store.isSaving
+                onTap: _choosing || store.isSaving
                     ? null
-                    : () => store.vote(VoteValue.maybe),
+                    : () => _vote(VoteValue.maybe),
               ),
               Decision(
                 icon: Icons.favorite,
                 label: 'Yes',
                 color: Palette.forest,
-                onTap: store.isSaving ? null : () => store.vote(VoteValue.yes),
+                onTap: _choosing || store.isSaving
+                    ? null
+                    : () => _vote(VoteValue.yes),
               ),
             ],
           ),
           TextButton.icon(
-            onPressed: store.history.isEmpty || store.isSaving
+            onPressed: store.history.isEmpty || store.isSaving || _choosing
                 ? null
                 : store.undo,
             icon: const Icon(Icons.undo),
@@ -1003,10 +1091,12 @@ class SyncVotes extends StatefulWidget {
     required this.store,
     required this.done,
     required this.scan,
+    this.back,
     this.custom = false,
   });
   final SessionStore store;
   final VoidCallback done, scan;
+  final VoidCallback? back;
   final bool custom;
   @override
   State<SyncVotes> createState() => _SyncVotesState();
@@ -1038,6 +1128,7 @@ class _SyncVotesState extends State<SyncVotes> {
 
   @override
   Widget build(BuildContext context) => Shell(
+    back: widget.back,
     child: ListView(
       children: [
         Text(
@@ -1049,7 +1140,7 @@ class _SyncVotesState extends State<SyncVotes> {
         Text(
           widget.custom
               ? 'Both phones must exchange a custom-name code before Face-off starts.'
-              : 'Show your encrypted update to your partner, then scan theirs.',
+              : 'This is separate from connecting phones: exchange your encrypted choices, then scan theirs.',
         ),
         if (widget.custom)
           Padding(
@@ -1086,7 +1177,9 @@ class _SyncVotesState extends State<SyncVotes> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text('Frame ${frameIndex + 1} of ${frames!.length}'),
+              Text(
+                'Frame ${frameIndex + 1} of ${frames!.length} · scan each one.',
+              ),
               TextButton(
                 onPressed: () => setState(
                   () => frameIndex = (frameIndex + 1) % frames!.length,

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:name_that_baby/core/session_store.dart';
 import 'package:name_that_baby/core/domain.dart';
+import 'package:name_that_baby/app/shell.dart';
 import 'package:name_that_baby/main.dart';
 
 void main() {
@@ -9,6 +10,7 @@ void main() {
     await tester.pumpWidget(NameThatBaby(store: SessionStore()));
     expect(find.text('NameThatBaby'), findsOneWidget);
     expect(find.text('Private & offline'), findsOneWidget);
+    expect(find.byType(BrandMark), findsOneWidget);
   });
 
   testWidgets('camera recovery explains how to reopen scanning', (
@@ -48,6 +50,9 @@ void main() {
       matching: find.byType(GestureDetector),
     );
     await tester.fling(card, const Offset(-600, 0), 1200);
+    await tester.pump(const Duration(milliseconds: 999));
+    expect(store.votes[candidate.id], isNull);
+    await tester.pump(const Duration(milliseconds: 1));
     await tester.pump();
 
     expect(store.votes[candidate.id], VoteValue.no);
@@ -91,6 +96,38 @@ void main() {
     );
 
     expect(find.text('View shared favorites'), findsOneWidget);
+  });
+
+  testWidgets('home lets each name group resume separately', (tester) async {
+    NameCategory? selected;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Home(
+          store: SessionStore(),
+          go: (_) {},
+          choose: (category) => selected = category,
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('Continue choosing boy names'));
+    expect(selected, NameCategory.boys);
+  });
+
+  testWidgets('sync has an exit back to home', (tester) async {
+    var exited = false;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: SyncVotes(
+          store: SessionStore(),
+          done: () {},
+          scan: () {},
+          back: () => exited = true,
+        ),
+      ),
+    );
+    await tester.tap(find.byTooltip('Back'));
+    expect(exited, isTrue);
   });
 
   testWidgets('custom-name sync reports bidirectional status', (tester) async {
