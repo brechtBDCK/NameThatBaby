@@ -245,9 +245,8 @@ class SessionStore extends ChangeNotifier {
       )
       .toList();
   Candidate? get current => currentFor();
-  Candidate? currentFor([NameCategory? category]) => enabled
-      .cast<Candidate?>()
-      .firstWhere(
+  Candidate? currentFor([NameCategory? category]) =>
+      enabled.cast<Candidate?>().firstWhere(
         (candidate) =>
             candidate != null &&
             (category == null || candidate.category == category) &&

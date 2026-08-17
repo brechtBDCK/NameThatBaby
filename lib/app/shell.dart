@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:mobile_scanner/mobile_scanner.dart';
 
 import 'theme.dart';
 
@@ -65,37 +64,9 @@ class BrandMark extends StatelessWidget {
   final double size;
 
   @override
-  Widget build(BuildContext context) => CustomPaint(
-    size: Size(size, size),
-    painter: _BrandMarkPainter(),
-  );
+  Widget build(BuildContext context) =>
+      CustomPaint(size: Size(size, size), painter: _BrandMarkPainter());
 }
-
-Widget scannerError(
-  BuildContext context,
-  MobileScannerException error,
-) => Center(
-  child: Padding(
-    padding: const EdgeInsets.all(24),
-    child: Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        const Icon(
-          Icons.no_photography_outlined,
-          size: 48,
-          color: Palette.terra,
-        ),
-        const SizedBox(height: 12),
-        Text(
-          error.errorCode == MobileScannerErrorCode.permissionDenied
-              ? 'Camera access is turned off. Enable camera access for NameThatBaby in your phone settings, then try again.'
-              : 'The camera scanner is unavailable. Close this screen and try again.',
-          textAlign: TextAlign.center,
-        ),
-      ],
-    ),
-  ),
-);
 
 class _SprigPainter extends CustomPainter {
   @override

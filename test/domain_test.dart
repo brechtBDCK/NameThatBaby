@@ -48,6 +48,31 @@ void main() {
     );
     expect(pool.map((candidate) => candidate.name), ['Ada', 'Bea']);
   });
+  test('country pool is capped at 150 and deterministic', () {
+    List<Candidate> ranked(String country, int offset) => [
+      for (var rank = 1; rank <= 200; rank++)
+        Candidate(offset + rank, '$country-$rank', NameCategory.girls, [
+          country,
+        ], rank),
+    ];
+    final rankings = {'FR': ranked('FR', 0), 'US': ranked('US', 1000)};
+    final first = equalCountryPool(rankings: rankings, seed: 42);
+    final second = equalCountryPool(rankings: rankings, seed: 42);
+
+    expect(first, hasLength(150));
+    expect(
+      first.map((candidate) => candidate.id),
+      second.map((candidate) => candidate.id),
+    );
+    expect(
+      first.where((candidate) => candidate.countries.single == 'FR'),
+      hasLength(75),
+    );
+    expect(
+      first.where((candidate) => candidate.countries.single == 'US'),
+      hasLength(75),
+    );
+  });
   test('decade ranking uses score then the specified tie breakers', () {
     final ranked = rankCountryDecade([
       for (var year = 2015; year <= 2024; year++) ...[

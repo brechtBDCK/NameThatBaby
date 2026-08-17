@@ -7,7 +7,6 @@ import 'package:qr_flutter/qr_flutter.dart';
 
 import 'app/theme.dart';
 import 'app/shell.dart';
-import 'app/soundscape.dart';
 import 'core/domain.dart';
 import 'core/qr_frames.dart';
 import 'core/qr_protocol.dart';
@@ -32,7 +31,6 @@ Future<void> main() async {
   );
   await store.restore();
   runApp(NameThatBaby(store: store));
-  Soundscape.start();
 }
 
 Widget scannerPlaceholder(BuildContext context) => const CameraRecovery();
@@ -797,7 +795,13 @@ class Home extends StatelessWidget {
           FilledButton(
             onPressed: store.remaining(category).isEmpty
                 ? null
-                : () => choose?.call(category) ?? go(AppPage.choosing),
+                : () {
+                    if (choose != null) {
+                      choose!(category);
+                    } else {
+                      go(AppPage.choosing);
+                    }
+                  },
             child: Text(
               'Continue choosing ${category == NameCategory.girls ? 'girl' : 'boy'} names',
             ),
@@ -909,10 +913,12 @@ class _ChoosingState extends State<Choosing> {
     SystemSound.play(SystemSoundType.click);
     await Future<void>.delayed(const Duration(seconds: 1));
     await widget.store.vote(vote);
-    if (mounted) setState(() {
-      _slide = Offset.zero;
-      _choosing = false;
-    });
+    if (mounted) {
+      setState(() {
+        _slide = Offset.zero;
+        _choosing = false;
+      });
+    }
   }
 
   @override
