@@ -17,7 +17,7 @@ For the Android beta loop in WSL, use Flutter 3.44.8, Java 21, Android SDK platf
 /tmp/flutter/bin/flutter run -d <android-device-id>
 ```
 
-The app targets iOS and Android. It makes no runtime network request and Android requests no Internet permission. `assets/data/names.sqlite` is a compact deterministic runtime ranking database. It contains cached source imports where available and development fixtures only for US and NL; it must not be released before those gaps and source licensing are reviewed.
+The app targets iOS and Android. It makes no runtime network request and Android requests no Internet permission. `assets/data/names.sqlite` is a compact deterministic runtime ranking database. It stores decade rank plus compact per-country coverage, latest-rank, best-rank, provenance, and eligible trend metadata—not raw observation history. Multi-country discovery remains country-fair and deterministic, with a modest relevance benefit for names appearing in several selected countries. It contains cached source imports where available and development fixtures only for US and NL; it must not be released before those gaps and source licensing are reviewed.
 
 ## Verify
 

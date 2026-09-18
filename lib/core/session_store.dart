@@ -1497,11 +1497,24 @@ List<Candidate> _candidates() {
     for (var index = 0; index < names.length; index++) {
       all.add(
         Candidate(
-          id++,
-          names[index],
-          category,
-          ['US', 'FR', 'NL'].sublist(0, index % 3 + 1),
-          index + 1,
+          id: id++,
+          name: names[index],
+          category: category,
+          popularity: [
+            for (final country in ['US', 'FR', 'NL'].sublist(0, index % 3 + 1))
+              CountryPopularity(
+                country: country,
+                decadeRank: index + 1,
+                decadeScore: 1,
+                observedYears: 10,
+                latestObservedYear: 2024,
+                latestRank: index + 1,
+                bestRank: index + 1,
+                sourceId: '$country-development-fixture',
+              ),
+          ],
+          combinedPoolPosition: index + 1,
+          combinedRelevanceScore: 1,
         ),
       );
     }

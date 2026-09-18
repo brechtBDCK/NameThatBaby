@@ -105,7 +105,7 @@ class BundledDatabaseInstaller {
 /// cannot query an asset directly. It is never downloaded or modified.
 class BundledNameRepository {
   static const _assetPath = 'assets/data/names.sqlite';
-  static const _databaseFileName = 'namethatbaby-names-v2.sqlite';
+  static const _databaseFileName = 'namethatbaby-names-v3.sqlite';
 
   Future<List<Candidate>> candidatePool({
     required Set<String> countries,
@@ -153,7 +153,10 @@ class BundledNameRepository {
     final marks = List.filled(countries.length, '?').join(', ');
     final rows = await database.rawQuery(
       '''SELECT ranking.country_code, name.id AS name_id, name.display_name,
-                ranking.source_rank
+                ranking.source_rank, ranking.decade_score,
+                ranking.observed_years, ranking.latest_observed_year,
+                ranking.latest_rank, ranking.best_rank, ranking.source_id,
+                ranking.trend
          FROM country_decade_ranking AS ranking
          JOIN name ON name.id = ranking.name_id
          WHERE ranking.category = ? AND ranking.country_code IN ($marks)
@@ -171,14 +174,34 @@ class BundledNameRepository {
           .putIfAbsent(country, () => [])
           .add(
             Candidate(
-              nameId * 2 + (category == NameCategory.girls ? 0 : 1),
-              row['display_name']! as String,
-              category,
-              [country],
-              row['source_rank']! as int,
+              id: nameId * 2 + (category == NameCategory.girls ? 0 : 1),
+              name: row['display_name']! as String,
+              category: category,
+              popularity: [
+                CountryPopularity(
+                  country: country,
+                  decadeRank: row['source_rank']! as int,
+                  decadeScore: (row['decade_score']! as num).toDouble(),
+                  observedYears: row['observed_years']! as int,
+                  latestObservedYear: row['latest_observed_year']! as int,
+                  latestRank: row['latest_rank']! as int,
+                  bestRank: row['best_rank']! as int,
+                  sourceId: row['source_id']! as String,
+                  trend: _trend(row['trend'] as String?),
+                ),
+              ],
+              combinedPoolPosition: 0,
+              combinedRelevanceScore: 0,
             ),
           );
     }
     return rankings;
   }
+
+  PopularityTrend? _trend(String? value) => switch (value) {
+    'rising' => PopularityTrend.rising,
+    'falling' => PopularityTrend.falling,
+    'stable' => PopularityTrend.stable,
+    _ => null,
+  };
 }

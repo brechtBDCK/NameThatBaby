@@ -7,6 +7,28 @@ enum VoteValue { no, maybe, yes }
 
 enum MatchTier { rejected, consider, strong }
 
+enum PopularityTrend { rising, falling, stable }
+
+String countryDisplayName(String code) =>
+    const {
+      'US': 'United States',
+      'CA': 'Canada',
+      'BE': 'Belgium',
+      'NL': 'Netherlands',
+      'DK': 'Denmark',
+      'NO': 'Norway',
+      'SE': 'Sweden',
+      'DE': 'Germany',
+      'FR': 'France',
+      'ES': 'Spain',
+      'IT': 'Italy',
+      'AT': 'Austria',
+      'GB': 'United Kingdom',
+      'IE': 'Ireland',
+      'AU': 'Australia',
+    }[code] ??
+    code;
+
 String normalizeName(String value) {
   final compact = value.trim().replaceAll(RegExp(r'\s+'), ' ');
   return compact.toLowerCase();
@@ -33,12 +55,54 @@ MatchTier matchTier(VoteValue mine, VoteValue partner) {
 }
 
 class Candidate {
-  const Candidate(this.id, this.name, this.category, this.countries, this.rank);
+  const Candidate({
+    required this.id,
+    required this.name,
+    required this.category,
+    required this.popularity,
+    required this.combinedPoolPosition,
+    required this.combinedRelevanceScore,
+  });
   final int id;
   final String name;
   final NameCategory category;
-  final List<String> countries;
-  final int rank;
+  final List<CountryPopularity> popularity;
+
+  /// Position in the deterministic, relevance-scored combined pool. The
+  /// presentation order is intentionally shuffled separately for discovery.
+  final int combinedPoolPosition;
+  final double combinedRelevanceScore;
+
+  List<String> get countries =>
+      popularity.map((value) => value.country).toSet().toList()..sort();
+
+  String get popularityLabel => countries.length == 1
+      ? 'Popular in ${countryDisplayName(countries.single)}'
+      : 'Popular across ${countries.length} selected countries';
+}
+
+class CountryPopularity {
+  const CountryPopularity({
+    required this.country,
+    required this.decadeRank,
+    required this.decadeScore,
+    required this.observedYears,
+    required this.latestObservedYear,
+    required this.latestRank,
+    required this.bestRank,
+    required this.sourceId,
+    this.trend,
+  });
+
+  final String country;
+  final int decadeRank;
+  final double decadeScore;
+  final int observedYears;
+  final int latestObservedYear;
+  final int latestRank;
+  final int bestRank;
+  final String sourceId;
+  final PopularityTrend? trend;
 }
 
 class AnnualNameRanking {
@@ -59,6 +123,33 @@ class AnnualNameRanking {
   final int rank;
 }
 
+double _decadeScore(Iterable<AnnualNameRanking> rows) =>
+    rows.fold(0, (score, row) => score + 1 / (log(row.rank + 1) / ln2));
+
+int _latestRank(List<AnnualNameRanking> rows) {
+  final latest = rows.map((row) => row.year).reduce(max);
+  return rows
+      .where((row) => row.year == latest)
+      .map((row) => row.rank)
+      .reduce(min);
+}
+
+PopularityTrend? _annualTrend(List<AnnualNameRanking> rows) {
+  final years = rows.map((row) => row.year).toSet();
+  if (years.length < 2) return null;
+  final first = years.reduce(min);
+  final firstRank = rows
+      .where((row) => row.year == first)
+      .map((row) => row.rank)
+      .reduce(min);
+  final latest = _latestRank(rows);
+  return latest < firstRank
+      ? PopularityTrend.rising
+      : latest > firstRank
+      ? PopularityTrend.falling
+      : PopularityTrend.stable;
+}
+
 /// Applies the product's equal-year decade ranking rules to one country.
 List<Candidate> rankCountryDecade(Iterable<AnnualNameRanking> observations) {
   final byId = <int, List<AnnualNameRanking>>{};
@@ -67,9 +158,7 @@ List<Candidate> rankCountryDecade(Iterable<AnnualNameRanking> observations) {
   }
   final ranked = byId.values.toList()
     ..sort((left, right) {
-      double scoreOf(List<AnnualNameRanking> rows) =>
-          rows.fold(0, (score, row) => score + 1 / (log(row.rank + 1) / ln2));
-      final score = scoreOf(right).compareTo(scoreOf(left));
+      final score = _decadeScore(right).compareTo(_decadeScore(left));
       if (score != 0) return score;
       final years = right
           .map((row) => row.year)
@@ -77,15 +166,7 @@ List<Candidate> rankCountryDecade(Iterable<AnnualNameRanking> observations) {
           .length
           .compareTo(left.map((row) => row.year).toSet().length);
       if (years != 0) return years;
-      int latestRank(List<AnnualNameRanking> rows) {
-        final latest = rows.map((row) => row.year).reduce(max);
-        return rows
-            .where((row) => row.year == latest)
-            .map((row) => row.rank)
-            .reduce(min);
-      }
-
-      final latest = latestRank(left).compareTo(latestRank(right));
+      final latest = _latestRank(left).compareTo(_latestRank(right));
       if (latest != 0) return latest;
       final best = left
           .map((row) => row.rank)
@@ -99,11 +180,26 @@ List<Candidate> rankCountryDecade(Iterable<AnnualNameRanking> observations) {
   return [
     for (var index = 0; index < ranked.length; index++)
       Candidate(
-        ranked[index].first.id,
-        ranked[index].first.name,
-        ranked[index].first.category,
-        [ranked[index].first.country],
-        index + 1,
+        id: ranked[index].first.id,
+        name: ranked[index].first.name,
+        category: ranked[index].first.category,
+        popularity: [
+          CountryPopularity(
+            country: ranked[index].first.country,
+            decadeRank: index + 1,
+            decadeScore: _decadeScore(ranked[index]),
+            observedYears: ranked[index].map((row) => row.year).toSet().length,
+            latestObservedYear: ranked[index]
+                .map((row) => row.year)
+                .reduce(max),
+            latestRank: _latestRank(ranked[index]),
+            bestRank: ranked[index].map((row) => row.rank).reduce(min),
+            sourceId: 'derived',
+            trend: _annualTrend(ranked[index]),
+          ),
+        ],
+        combinedPoolPosition: index + 1,
+        combinedRelevanceScore: _decadeScore(ranked[index]),
       ),
   ];
 }
@@ -115,15 +211,15 @@ List<Candidate> equalCountryPool({
   bool shuffle = true,
 }) {
   final countries = rankings.keys.toList()..sort();
-  final origins = <String, Set<String>>{};
+  final appearances = <String, List<CountryPopularity>>{};
   for (final entry in rankings.entries) {
     for (final candidate in entry.value) {
-      origins
+      appearances
           .putIfAbsent(
             '${candidate.category.name}:${normalizeName(candidate.name)}',
-            () => <String>{},
+            () => <CountryPopularity>[],
           )
-          .add(entry.key);
+          .addAll(candidate.popularity);
     }
   }
   final positions = <String, int>{for (final country in countries) country: 0};
@@ -148,20 +244,48 @@ List<Candidate> equalCountryPool({
     }
     if (!progressed) break;
   }
-  if (shuffle) selected.shuffle(Random(seed));
-  return selected
-      .map(
-        (candidate) => Candidate(
-          candidate.id,
-          candidate.name,
-          candidate.category,
-          origins['${candidate.category.name}:${normalizeName(candidate.name)}']!
-              .toList()
-            ..sort(),
-          candidate.rank,
-        ),
-      )
-      .toList();
+  final combined = selected.map((candidate) {
+    final popularity =
+        appearances['${candidate.category.name}:${normalizeName(candidate.name)}']!
+          ..sort((left, right) => left.country.compareTo(right.country));
+    // A second selected-country appearance is useful context, but less
+    // important than remaining near the top of any individual country list.
+    final relevance =
+        popularity.fold<double>(
+          0,
+          (total, value) => total + 1 / (log(value.decadeRank + 1) / ln2),
+        ) +
+        (popularity.length - 1) * .25;
+    return Candidate(
+      id: candidate.id,
+      name: candidate.name,
+      category: candidate.category,
+      popularity: popularity,
+      combinedPoolPosition: 0,
+      combinedRelevanceScore: relevance,
+    );
+  }).toList();
+  combined.sort((left, right) {
+    final score = right.combinedRelevanceScore.compareTo(
+      left.combinedRelevanceScore,
+    );
+    return score != 0
+        ? score
+        : normalizeName(left.name).compareTo(normalizeName(right.name));
+  });
+  final positioned = [
+    for (var index = 0; index < combined.length; index++)
+      Candidate(
+        id: combined[index].id,
+        name: combined[index].name,
+        category: combined[index].category,
+        popularity: combined[index].popularity,
+        combinedPoolPosition: index + 1,
+        combinedRelevanceScore: combined[index].combinedRelevanceScore,
+      ),
+  ];
+  if (shuffle) positioned.shuffle(Random(seed));
+  return positioned;
 }
 
 class Pairing {

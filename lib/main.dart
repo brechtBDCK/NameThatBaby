@@ -981,7 +981,7 @@ class _ChoosingState extends State<Choosing> {
               },
               child: Semantics(
                 label:
-                    '${candidate.name}, ${candidate.category == NameCategory.girls ? 'girls' : 'boys'}, ${store.remaining(candidate.category).length} names remaining. Swipe left for No, down for Maybe, or right for Yes.',
+                    '${candidate.name}, ${candidate.category == NameCategory.girls ? 'girls' : 'boys'}, ${candidate.popularityLabel}, ${store.remaining(candidate.category).length} names remaining. Swipe left for No, down for Maybe, or right for Yes.',
                 child: AnimatedSlide(
                   offset: _slide,
                   duration: const Duration(seconds: 1),
@@ -1000,10 +1000,8 @@ class _ChoosingState extends State<Choosing> {
                                 .copyWith(fontWeight: FontWeight.w800),
                           ),
                           const SizedBox(height: 16),
-                          Text(candidate.countries.join(' · ')),
-                          const SizedBox(height: 6),
                           Text(
-                            'Ranked #${candidate.rank} in your selected pool',
+                            candidate.popularityLabel,
                             style: TextStyle(
                               color: Palette.forest.withValues(alpha: 0.72),
                             ),

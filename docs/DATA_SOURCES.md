@@ -26,3 +26,9 @@ public distribution.
 For every future import, preserve the source URL, edition date, retrieval date,
 attribution, raw checksum, covered years, and licensing-review status in the
 generated manifest. See `tools/name_data/sources.yaml` for adapter identifiers.
+
+The runtime ranking rows preserve only derived coverage/provenance metadata;
+they do not ship the raw annual observation table. A trend is shown only where
+the source contributes multiple annual observations. Belgium's single national
+aggregate therefore has no trend, Germany remains a shallow GfdS top-ten
+fallback, and AU remains NSW/Queensland coverage rather than national data.

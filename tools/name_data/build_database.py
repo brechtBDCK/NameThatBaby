@@ -43,23 +43,34 @@ def raw_checksum(path):
 
 def insert_observation(conn, name_id, source, name, category, year, count, rank):
     key = ' '.join(unicodedata.normalize('NFC', name).strip().split()).casefold()
-    row = conn.execute('SELECT id FROM name WHERE normalized_key=?', (key,)).fetchone()
-    if not row:
+    known = insert_observation.name_ids.get(key)
+    if known is None:
         conn.execute('INSERT INTO name VALUES (?, ?, ?)', (name_id, name, key))
-        row = (name_id,)
+        known = name_id
+        insert_observation.name_ids[key] = known
         name_id += 1
-    conn.execute(
-        'INSERT INTO name_observation VALUES (?, ?, ?, ?, ?, ?)',
-        (row[0], source, year, category, count, rank),
-    )
+    insert_observation.pending.append((known, source, year, category, count, rank))
+    if len(insert_observation.pending) >= 10000:
+        _flush_observations(conn)
     return name_id
+
+
+def _flush_observations(conn):
+    if not insert_observation.pending:
+        return
+    conn.executemany('INSERT INTO name_observation VALUES (?, ?, ?, ?, ?, ?)', insert_observation.pending)
+    insert_observation.pending.clear()
 
 
 def materialize_runtime_rankings(conn):
     """Keep only the small, directly queried candidate rankings at runtime."""
     conn.execute('''CREATE TABLE country_decade_ranking(
       country_code TEXT NOT NULL, category TEXT NOT NULL, name_id INTEGER NOT NULL,
-      source_rank INTEGER NOT NULL, PRIMARY KEY(country_code, category, name_id))''')
+      source_rank INTEGER NOT NULL, decade_score REAL NOT NULL,
+      observed_years INTEGER NOT NULL, latest_observed_year INTEGER NOT NULL,
+      latest_rank INTEGER NOT NULL, best_rank INTEGER NOT NULL,
+      source_id TEXT NOT NULL, trend TEXT,
+      PRIMARY KEY(country_code, category, name_id))''')
     for country, in conn.execute('SELECT code FROM country ORDER BY code'):
       for category in ('girl', 'boy'):
         source_lists = {}
@@ -78,8 +89,11 @@ def materialize_runtime_rankings(conn):
             latest_year = max(year for year, _ in observations)
             latest_rank = min(rank for year, rank in observations if year == latest_year)
             best_rank = min(rank for _, rank in observations)
-            ranked.append((name_id, key, score, years, latest_rank, best_rank))
-          ranked.sort(key=lambda row: (-row[2], -row[3], row[4], row[5], row[1]))
+            first_year = min(year for year, _ in observations)
+            first_rank = min(rank for year, rank in observations if year == first_year)
+            trend = None if years < 2 else ('rising' if latest_rank < first_rank else 'falling' if latest_rank > first_rank else 'stable')
+            ranked.append((name_id, key, score, years, latest_year, latest_rank, best_rank, trend))
+          ranked.sort(key=lambda row: (-row[2], -row[3], row[5], row[6], row[1]))
           source_lists[source] = ranked
         positions = {source: 0 for source in source_lists}
         seen, selected = set(), []
@@ -91,11 +105,12 @@ def materialize_runtime_rankings(conn):
               item = items[positions[source]]
               positions[source] += 1
               if item[1] not in seen:
-                seen.add(item[1]); selected.append(item[0]); progressed = True; break
+                seen.add(item[1]); selected.append((item, source)); progressed = True; break
           if len(selected) >= 150: break
           if not progressed: break
-        conn.executemany('INSERT INTO country_decade_ranking VALUES (?, ?, ?, ?)',
-                         [(country, category, name_id, rank) for rank, name_id in enumerate(selected, 1)])
+        conn.executemany('INSERT INTO country_decade_ranking VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                         [(country, category, item[0], rank, item[2], item[3], item[4], item[5], item[6], source, item[7])
+                          for rank, (item, source) in enumerate(selected, 1)])
     conn.execute('DELETE FROM name WHERE id NOT IN (SELECT name_id FROM country_decade_ranking)')
     conn.execute('DROP TABLE name_observation')
 
@@ -104,8 +119,11 @@ def build():
     database = OUT / 'names.sqlite'
     if database.exists(): database.unlink()
     conn = sqlite3.connect(database)
+    insert_observation.name_ids = {}
+    insert_observation.pending = []
     conn.executescript('''
       PRAGMA page_size=4096; PRAGMA journal_mode=OFF; PRAGMA synchronous=OFF;
+      PRAGMA cache_size=-200000; PRAGMA temp_store=MEMORY;
       CREATE TABLE country(code TEXT PRIMARY KEY, display_name TEXT NOT NULL, enabled INTEGER NOT NULL);
       CREATE TABLE data_source(id TEXT PRIMARY KEY, country_code TEXT NOT NULL, provider TEXT NOT NULL, source_url TEXT NOT NULL, edition TEXT NOT NULL, retrieved_at TEXT NOT NULL, license_status TEXT NOT NULL, methodology_notes TEXT);
       CREATE TABLE name(id INTEGER PRIMARY KEY, display_name TEXT NOT NULL, normalized_key TEXT NOT NULL UNIQUE);
@@ -192,6 +210,8 @@ def build():
             for rank, name in enumerate(values, 1):
                 for year in range(2015, 2025):
                     name_id = insert_observation(conn, name_id, source, name, category, year, 1000-rank, rank)
+    _flush_observations(conn)
+    conn.execute('CREATE INDEX observation_source_category ON name_observation(source_id, category)')
     materialize_runtime_rankings(conn)
     conn.commit(); conn.execute('VACUUM'); conn.close()
     sha = hashlib.sha256(database.read_bytes()).hexdigest()
@@ -208,7 +228,7 @@ def build():
             'coverage_limitations': ('Equal constituent coverage from England/Wales, Scotland, and Northern Ireland; redistribution licensing remains under review.' if code == 'GB' else 'NSW and Queensland coverage only; add other state and territory sources before national release.' if code == 'AU' else 'One national 2015-2024 aggregate; annual source rows are not published.' if code == 'BE' else 'GfdS national fallback; public top-ten lists only.' if code == 'DE' else 'Raw archive imported; redistribution licensing remains under review.') if official else 'Not production data; import official cached source before release.',
         })
     imported = sorted(code for code, sources in official_sources.items() if sources)
-    manifest = {'schema_version': 1, 'generated_at': '2026-08-02T00:00:00Z', 'build_id': f"official-{'-'.join(code.lower() for code in imported)}-plus-fixtures" if imported else 'development-fixture-v1', 'sqlite_sha256': sha, 'redistribution_review_required': True, 'development_fixture_only': not imported, 'contains_fixture_coverage': len(imported) < len(COUNTRIES), 'countries': country_manifest}
+    manifest = {'schema_version': 2, 'generated_at': '2026-08-03T00:00:00Z', 'build_id': f"official-{'-'.join(code.lower() for code in imported)}-plus-fixtures-v2" if imported else 'development-fixture-v2', 'sqlite_sha256': sha, 'redistribution_review_required': True, 'development_fixture_only': not imported, 'contains_fixture_coverage': len(imported) < len(COUNTRIES), 'countries': country_manifest}
     (OUT / 'manifest.json').write_text(json.dumps(manifest, indent=2, sort_keys=True) + '\n')
     print(f'{database} {sha}')
 

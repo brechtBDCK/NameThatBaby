@@ -1,6 +1,34 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:name_that_baby/core/domain.dart';
 
+Candidate candidate(
+  int id,
+  String name,
+  NameCategory category,
+  String country,
+  int rank, {
+  PopularityTrend? trend,
+}) => Candidate(
+  id: id,
+  name: name,
+  category: category,
+  popularity: [
+    CountryPopularity(
+      country: country,
+      decadeRank: rank,
+      decadeScore: 1 / rank,
+      observedYears: trend == null ? 1 : 2,
+      latestObservedYear: 2024,
+      latestRank: rank,
+      bestRank: rank,
+      sourceId: '$country-source',
+      trend: trend,
+    ),
+  ],
+  combinedPoolPosition: 0,
+  combinedRelevanceScore: 0,
+);
+
 void main() {
   test('No vetoes every matching combination', () {
     for (final value in VoteValue.values) {
@@ -17,12 +45,10 @@ void main() {
   test('country pool round robin deduplicates category identities', () {
     final pool = equalCountryPool(
       rankings: {
-        'FR': [
-          const Candidate(1, 'Elena', NameCategory.girls, ['FR'], 1),
-        ],
+        'FR': [candidate(1, 'Elena', NameCategory.girls, 'FR', 1)],
         'US': [
-          const Candidate(2, 'Elena', NameCategory.girls, ['US'], 1),
-          const Candidate(3, 'Nora', NameCategory.girls, ['US'], 2),
+          candidate(2, 'Elena', NameCategory.girls, 'US', 1),
+          candidate(3, 'Nora', NameCategory.girls, 'US', 2),
         ],
       },
       seed: 1,
@@ -36,12 +62,8 @@ void main() {
   test('unshuffled country pool preserves round-robin rank order', () {
     final pool = equalCountryPool(
       rankings: {
-        'A': [
-          const Candidate(1, 'Ada', NameCategory.girls, ['A'], 1),
-        ],
-        'B': [
-          const Candidate(2, 'Bea', NameCategory.girls, ['B'], 1),
-        ],
+        'A': [candidate(1, 'Ada', NameCategory.girls, 'A', 1)],
+        'B': [candidate(2, 'Bea', NameCategory.girls, 'B', 1)],
       },
       seed: 1,
       shuffle: false,
@@ -51,9 +73,13 @@ void main() {
   test('country pool is capped at 150 and deterministic', () {
     List<Candidate> ranked(String country, int offset) => [
       for (var rank = 1; rank <= 200; rank++)
-        Candidate(offset + rank, '$country-$rank', NameCategory.girls, [
+        candidate(
+          offset + rank,
+          '$country-$rank',
+          NameCategory.girls,
           country,
-        ], rank),
+          rank,
+        ),
     ];
     final rankings = {'FR': ranked('FR', 0), 'US': ranked('US', 1000)};
     final first = equalCountryPool(rankings: rankings, seed: 42);
@@ -96,6 +122,112 @@ void main() {
     ]);
 
     expect(ranked.map((candidate) => candidate.name), ['Amy', 'Zoe']);
+    expect(ranked.first.popularity.single.trend, PopularityTrend.stable);
+  });
+  test('one-country pool retains truthful country metadata', () {
+    final pool = equalCountryPool(
+      rankings: {
+        'BE': [candidate(8, 'Lina', NameCategory.girls, 'BE', 12)],
+      },
+      seed: 4,
+      shuffle: false,
+    );
+
+    expect(pool.single.countries, ['BE']);
+    expect(pool.single.popularityLabel, 'Popular in Belgium');
+    expect(pool.single.combinedPoolPosition, 1);
+  });
+  test(
+    'three-country pool rewards cross-country relevance without duplicates',
+    () {
+      final pool = equalCountryPool(
+        rankings: {
+          'BE': [candidate(1, 'Nora', NameCategory.girls, 'BE', 2)],
+          'FR': [candidate(2, 'Nora', NameCategory.girls, 'FR', 3)],
+          'NL': [candidate(3, 'Nora', NameCategory.girls, 'NL', 4)],
+        },
+        seed: 7,
+        shuffle: false,
+      );
+
+      expect(pool, hasLength(1));
+      expect(pool.single.countries, ['BE', 'FR', 'NL']);
+      expect(pool.single.combinedRelevanceScore, greaterThan(1));
+      expect(
+        pool.single.popularityLabel,
+        'Popular across 3 selected countries',
+      );
+    },
+  );
+  test('same spelling remains separate for girls and boys', () {
+    final pool = equalCountryPool(
+      rankings: {
+        'US': [
+          candidate(1, 'Robin', NameCategory.girls, 'US', 1),
+          candidate(2, 'Robin', NameCategory.boys, 'US', 1),
+        ],
+      },
+      seed: 1,
+      shuffle: false,
+    );
+
+    expect(
+      pool.map((value) => value.category),
+      containsAll([NameCategory.girls, NameCategory.boys]),
+    );
+  });
+  test('short country lists do not starve any selected country', () {
+    final pool = equalCountryPool(
+      rankings: {
+        'A': [candidate(1, 'Ada', NameCategory.girls, 'A', 1)],
+        'B': [candidate(2, 'Bea', NameCategory.girls, 'B', 1)],
+        'C': [candidate(3, 'Cia', NameCategory.girls, 'C', 1)],
+      },
+      seed: 1,
+      shuffle: false,
+    );
+
+    expect(pool.map((value) => value.countries.single), ['A', 'B', 'C']);
+  });
+  test(
+    'seed changes presentation order, never candidate membership or IDs',
+    () {
+      final rankings = {
+        'A': [
+          for (var i = 1; i <= 12; i++)
+            candidate(i, 'A$i', NameCategory.girls, 'A', i),
+        ],
+        'B': [
+          for (var i = 1; i <= 12; i++)
+            candidate(100 + i, 'B$i', NameCategory.girls, 'B', i),
+        ],
+      };
+      final first = equalCountryPool(rankings: rankings, seed: 1);
+      final second = equalCountryPool(rankings: rankings, seed: 2);
+
+      expect(
+        first.map((value) => value.id).toSet(),
+        second.map((value) => value.id).toSet(),
+      );
+      expect(
+        first.map((value) => value.id).toList(),
+        isNot(second.map((value) => value.id).toList()),
+      );
+    },
+  );
+  test('aggregate popularity has no trend while annual popularity may', () {
+    final aggregate = candidate(1, 'Lina', NameCategory.girls, 'BE', 1);
+    final annual = candidate(
+      2,
+      'Lina',
+      NameCategory.girls,
+      'FR',
+      1,
+      trend: PopularityTrend.rising,
+    );
+
+    expect(aggregate.popularity.single.trend, isNull);
+    expect(annual.popularity.single.trend, PopularityTrend.rising);
   });
   test('Swiss pairing avoids previous pair when possible', () {
     final pairs = scheduleRound(['a', 'b', 'c', 'd'], {}, {'a|b'});

@@ -1,5 +1,5 @@
 {
-  "build_id": "official-at-au-be-ca-de-dk-es-fr-gb-ie-it-no-se-plus-fixtures",
+  "build_id": "official-at-au-be-ca-de-dk-es-fr-gb-ie-it-no-se-plus-fixtures-v2",
   "contains_fixture_coverage": true,
   "countries": [
     {
@@ -193,8 +193,8 @@
     }
   ],
   "development_fixture_only": false,
-  "generated_at": "2026-08-02T00:00:00Z",
+  "generated_at": "2026-08-03T00:00:00Z",
   "redistribution_review_required": true,
-  "schema_version": 1,
-  "sqlite_sha256": "b018a8b193dc017bd8f79599fbffdbbd41111db8f05faf6517800731b09122e1"
+  "schema_version": 2,
+  "sqlite_sha256": "389a54042fb6369ac5f5937373a5e9efb711aa7a299da93bd605a7149bc675f8"
 }

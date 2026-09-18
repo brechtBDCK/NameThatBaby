@@ -128,7 +128,7 @@ void main() {
     final secrets = MemorySecrets();
     final store = testStore(secrets: secrets, state: state);
     for (final candidate in store.candidates.where(
-      (candidate) => candidate.rank <= 2,
+      (candidate) => candidate.combinedPoolPosition <= 2,
     )) {
       store.votes[candidate.id] = VoteValue.yes;
       store.partnerVotes[candidate.id] = VoteValue.yes;
@@ -270,7 +270,7 @@ void main() {
     );
     for (final store in [first, second]) {
       for (final candidate in store.candidates.where(
-        (candidate) => candidate.rank <= 2,
+        (candidate) => candidate.combinedPoolPosition <= 2,
       )) {
         store.votes[candidate.id] = VoteValue.yes;
         store.partnerVotes[candidate.id] = VoteValue.yes;
@@ -300,7 +300,7 @@ void main() {
   test('faceoff uses shared shortlist and produces category rankings', () {
     final store = testStore();
     for (final candidate in store.candidates.where(
-      (candidate) => candidate.rank <= 2,
+      (candidate) => candidate.combinedPoolPosition <= 2,
     )) {
       store.votes[candidate.id] = VoteValue.yes;
       store.partnerVotes[candidate.id] = VoteValue.yes;
@@ -397,7 +397,7 @@ void main() {
       );
       for (final store in [first, second]) {
         for (final candidate in store.candidates.where(
-          (candidate) => candidate.rank <= 2,
+          (candidate) => candidate.combinedPoolPosition <= 2,
         )) {
           store.votes[candidate.id] = VoteValue.yes;
           store.partnerVotes[candidate.id] = VoteValue.yes;
@@ -466,7 +466,7 @@ void main() {
       await creator.customNamesUpdatePayload(),
     );
     for (final candidate in creator.candidates.where(
-      (candidate) => candidate.rank <= 2,
+      (candidate) => candidate.combinedPoolPosition <= 2,
     )) {
       creator.votes[candidate.id] = VoteValue.yes;
       creator.partnerVotes[candidate.id] = VoteValue.yes;
