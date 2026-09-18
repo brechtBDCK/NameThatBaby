@@ -4,7 +4,7 @@
   source_url: https://www.ssa.gov/oact/babynames/limits.html
   adapter: ssa_us
   expected_format: zip_csv
-  enabled: true
+  enabled: false
   license_status: review_before_release
   notes: Names below the source privacy threshold are omitted.
 - country_code: CA
@@ -27,7 +27,7 @@
   source_url: https://www.svb.nl/
   adapter: official_ranking
   expected_format: html_or_csv
-  enabled: true
+  enabled: false
   license_status: review_before_release
 - country_code: DK
   provider: Statistics Denmark

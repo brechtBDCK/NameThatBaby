@@ -72,12 +72,12 @@ class _SprigPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final stem = Paint()
-      ..color = Palette.forest.withValues(alpha: 0.55)
+      ..color = Palette.sage.withValues(alpha: 0.48)
       ..strokeWidth = 3
       ..style = PaintingStyle.stroke
       ..strokeCap = StrokeCap.round;
-    final leaf = Paint()..color = Palette.forest.withValues(alpha: 0.5);
-    final berry = Paint()..color = Palette.gold.withValues(alpha: 0.7);
+    final leaf = Paint()..color = Palette.sage.withValues(alpha: 0.42);
+    final berry = Paint()..color = Palette.rose.withValues(alpha: 0.5);
     final path = Path()
       ..moveTo(-4, size.height + 4)
       ..quadraticBezierTo(50, 66, 112, 12);
@@ -110,22 +110,24 @@ class _BrandMarkPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final scale = size.width / 96;
     canvas.scale(scale, scale);
-    final terra = Paint()..color = Palette.terra;
-    final forest = Paint()..color = Palette.forest;
-    final gold = Paint()..color = Palette.gold;
-    final leftLeaf = Path()
-      ..moveTo(43, 66)
-      ..cubicTo(17, 57, 13, 28, 27, 13)
-      ..cubicTo(49, 24, 61, 45, 43, 66)
+    final ink = Paint()
+      ..color = Palette.wine
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 5
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round;
+    final accent = Paint()..color = Palette.sage;
+    final book = Path()
+      ..moveTo(14, 32)
+      ..quadraticBezierTo(34, 25, 48, 40)
+      ..quadraticBezierTo(62, 25, 82, 32)
+      ..lineTo(82, 72)
+      ..quadraticBezierTo(62, 65, 48, 80)
+      ..quadraticBezierTo(34, 65, 14, 72)
       ..close();
-    final rightLeaf = Path()
-      ..moveTo(47, 67)
-      ..cubicTo(51, 35, 69, 22, 84, 21)
-      ..cubicTo(89, 49, 72, 68, 47, 67)
-      ..close();
-    canvas.drawPath(leftLeaf, terra);
-    canvas.drawPath(rightLeaf, forest);
-    canvas.drawCircle(const Offset(62, 13), 11, gold);
+    canvas.drawPath(book, ink);
+    canvas.drawLine(const Offset(48, 40), const Offset(48, 80), ink);
+    canvas.drawCircle(const Offset(48, 18), 6, accent);
   }
 
   @override

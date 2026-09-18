@@ -1,7 +1,4 @@
-"""Deterministic, offline SQLite builder using committed development fixture rows.
-
-Replace fixture rows with cached official downloads before public distribution.
-"""
+"""Deterministic, offline SQLite builder from cached genuine source inputs."""
 import hashlib
 import json
 import sqlite3
@@ -29,7 +26,6 @@ from adapters.gfds_de import load_decade as load_gfds_de_decade
 ROOT = Path(__file__).resolve().parents[2]
 OUT = ROOT / 'assets/data'
 COUNTRIES = {'US':'United States','CA':'Canada','BE':'Belgium','NL':'Netherlands','DK':'Denmark','NO':'Norway','SE':'Sweden','DE':'Germany','FR':'France','ES':'Spain','IT':'Italy','AT':'Austria','GB':'United Kingdom','IE':'Ireland','AU':'Australia'}
-NAMES = {'girl':['Elena','Nora','Olivia','Sofia','Amélie','Mila','Clara','Lucia','Iris','Ava'], 'boy':['Leo','Noah','Arthur','Oliver','Luca','Hugo','Felix','Milo','Oscar','Theo']}
 
 
 def raw_checksum(path):
@@ -106,7 +102,7 @@ def materialize_runtime_rankings(conn):
               positions[source] += 1
               if item[1] not in seen:
                 seen.add(item[1]); selected.append((item, source)); progressed = True; break
-          if len(selected) >= 150: break
+          if len(selected) >= 200: break
           if not progressed: break
         conn.executemany('INSERT INTO country_decade_ranking VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
                          [(country, category, item[0], rank, item[2], item[3], item[4], item[5], item[6], source, item[7])
@@ -129,7 +125,7 @@ def build():
       CREATE TABLE name(id INTEGER PRIMARY KEY, display_name TEXT NOT NULL, normalized_key TEXT NOT NULL UNIQUE);
       CREATE TABLE name_observation(name_id INTEGER NOT NULL, source_id TEXT NOT NULL, year INTEGER NOT NULL, category TEXT NOT NULL CHECK(category IN ('girl','boy')), count INTEGER, source_rank INTEGER NOT NULL, PRIMARY KEY(name_id,source_id,year,category));
     ''')
-    conn.executemany('INSERT INTO country VALUES (?, ?, 1)', sorted(COUNTRIES.items()))
+    conn.executemany('INSERT INTO country VALUES (?, ?, 0)', sorted(COUNTRIES.items()))
     archive = ROOT / 'tools/name_data/raw_cache/names.zip'
     us_rows = load_decade(archive) if archive.exists() else None
     fr_archive = ROOT / 'tools/name_data/raw_cache/prenoms-2024-nat_csv.zip'
@@ -191,13 +187,9 @@ def build():
     official_sources = {code: [entry for entry in entries if entry[1] is not None] for code, entries in official_sources.items()}
     name_id = 1
     for code in sorted(COUNTRIES):
-        source = f'{code}-development-fixture'
-        provider = 'Development fixture; official source pending import'
-        url = 'See tools/name_data/sources.yaml'
-        edition = 'fixture-v1'
-        notes = 'Prototype-only sample preserving source schema.'
         sources = official_sources.get(code, [])
         if sources:
+            conn.execute('UPDATE country SET enabled=1 WHERE code=?', (code,))
             for source, rows, provider, url, raw in sources:
                 edition = f'{min(row.year for row in rows)}-{max(row.year for row in rows)}'
                 notes = f'Official archive; raw SHA-256 {raw_checksum(raw)}.'
@@ -205,11 +197,6 @@ def build():
                 for row in rows:
                     name_id = insert_observation(conn, name_id, source, row.name, row.category, row.year, row.count, row.rank)
             continue
-        conn.execute('INSERT INTO data_source VALUES (?, ?, ?, ?, ?, ?, ?, ?)', (source, code, provider, url, edition, '2026-08-02', 'review_before_release', notes))
-        for category, values in NAMES.items():
-            for rank, name in enumerate(values, 1):
-                for year in range(2015, 2025):
-                    name_id = insert_observation(conn, name_id, source, name, category, year, 1000-rank, rank)
     _flush_observations(conn)
     conn.execute('CREATE INDEX observation_source_category ON name_observation(source_id, category)')
     materialize_runtime_rankings(conn)
@@ -222,13 +209,15 @@ def build():
         official = bool(sources)
         country_manifest.append({
             'code': code,
-            'provider': ', '.join(item[2] for item in sources) if official else 'Development fixture; see sources.yaml',
-            'covered_years': [min(row.year for row in country_rows), max(row.year for row in country_rows)] if official else [2015, 2024],
-            'record_count_per_category': {category: sum(row.category == category for row in country_rows) for category in ('girl', 'boy')} if official else 100,
+            'display_name': COUNTRIES[code],
+            'available': official,
+            'provider': ', '.join(item[2] for item in sources) if official else 'Unavailable — official import not bundled',
+            'covered_years': [min(row.year for row in country_rows), max(row.year for row in country_rows)] if official else [],
+            'record_count_per_category': {category: sum(row.category == category for row in country_rows) for category in ('girl', 'boy')} if official else {'girl': 0, 'boy': 0},
             'coverage_limitations': ('Equal constituent coverage from England/Wales, Scotland, and Northern Ireland; redistribution licensing remains under review.' if code == 'GB' else 'NSW and Queensland coverage only; add other state and territory sources before national release.' if code == 'AU' else 'One national 2015-2024 aggregate; annual source rows are not published.' if code == 'BE' else 'GfdS national fallback; public top-ten lists only.' if code == 'DE' else 'Raw archive imported; redistribution licensing remains under review.') if official else 'Not production data; import official cached source before release.',
         })
     imported = sorted(code for code, sources in official_sources.items() if sources)
-    manifest = {'schema_version': 2, 'generated_at': '2026-08-03T00:00:00Z', 'build_id': f"official-{'-'.join(code.lower() for code in imported)}-plus-fixtures-v2" if imported else 'development-fixture-v2', 'sqlite_sha256': sha, 'redistribution_review_required': True, 'development_fixture_only': not imported, 'contains_fixture_coverage': len(imported) < len(COUNTRIES), 'countries': country_manifest}
+    manifest = {'schema_version': 3, 'generated_at': '2026-09-18T00:00:00Z', 'build_id': f"official-{'-'.join(code.lower() for code in imported)}-v3" if imported else 'no-verified-data-v3', 'sqlite_sha256': sha, 'redistribution_review_required': True, 'development_fixture_only': not imported, 'contains_fixture_coverage': False, 'countries': country_manifest}
     (OUT / 'manifest.json').write_text(json.dumps(manifest, indent=2, sort_keys=True) + '\n')
     print(f'{database} {sha}')
 

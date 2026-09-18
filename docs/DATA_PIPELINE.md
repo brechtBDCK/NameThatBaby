@@ -3,7 +3,7 @@
 `tools/name_data/build_database.py` creates the SQLite asset deterministically from cached source inputs. `sources.yaml` lists the intended upstream provider and adapter per country. Raw downloads are stored only under ignored `raw_cache/`; the installed app never invokes this pipeline.
 
 The builder retains the full observations only while deriving decade scores, then
-materializes at most 150 ranked names per country/category in
+materializes at most 200 ranked names per country/category in
 `country_decade_ranking` for the runtime asset. Each materialized row keeps its
 decade rank/score, observed-year count, latest year/rank, best rank, selected
 source ID, and a nullable rank-direction trend. Trend is only derived for two

@@ -17,7 +17,7 @@ For the Android beta loop in WSL, use Flutter 3.44.8, Java 21, Android SDK platf
 /tmp/flutter/bin/flutter run -d <android-device-id>
 ```
 
-The app targets iOS and Android. It makes no runtime network request and Android requests no Internet permission. `assets/data/names.sqlite` is a compact deterministic runtime ranking database. It stores decade rank plus compact per-country coverage, latest-rank, best-rank, provenance, and eligible trend metadata—not raw observation history. Multi-country discovery remains country-fair and deterministic, with a modest relevance benefit for names appearing in several selected countries. It contains cached source imports where available and development fixtures only for US and NL; it must not be released before those gaps and source licensing are reviewed.
+The app targets iOS and Android. It makes no runtime network request and Android requests no Internet permission. `assets/data/names.sqlite` is a compact deterministic runtime ranking database. It stores decade rank plus compact per-country coverage, latest-rank, best-rank, provenance, and eligible trend metadata—not raw observation history. Discovery uses the saved country-priority order, returns up to 200 names per enabled category, and remains deterministic with a modest relevance benefit for names appearing in several selected countries. US and NL are unavailable in this bundle because a verified official import is not cached; no fixture country is selectable.
 
 ## Verify
 
@@ -40,4 +40,4 @@ See [release configuration](docs/RELEASE_CONFIGURATION.md) for owner-supplied
 identifiers, signing, versioning, and icon requirements. Device-dependent
 checks are tracked in [DEFERRED_DEVICE_VERIFICATION.md](DEFERRED_DEVICE_VERIFICATION.md).
 
-Data coverage: US and NL remain development fixtures. CA, DK, NO, SE, FR, ES, IT, AT, GB and IE use cached official imports; BE is a single national 2015–2024 aggregate, DE is the documented GfdS national fallback, and AU round-robins NSW and Queensland equally rather than claiming national coverage. Redistribution review remains required.
+Data coverage: CA, DK, NO, SE, FR, ES, IT, AT, GB and IE use cached official imports; BE is a single national 2015–2024 aggregate, DE is the documented GfdS national fallback, and AU balances NSW and Queensland rather than claiming national coverage. US and NL are unavailable until official inputs can be verified. Redistribution review remains required.

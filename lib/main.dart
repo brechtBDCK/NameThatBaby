@@ -23,11 +23,12 @@ Future<void> main() async {
   final repository = BundledNameRepository();
   final store = SessionStore(
     datasetHash: manifest['sqlite_sha256']! as String,
-    candidateLoader: (countries, categories, seed) => repository.candidatePool(
-      countries: countries,
-      categories: categories,
-      seed: seed,
-    ),
+    candidateLoader: (countryPriority, categories, seed) =>
+        repository.candidatePool(
+          countryPriority: countryPriority,
+          categories: categories,
+          seed: seed,
+        ),
   );
   await store.restore();
   runApp(NameThatBaby(store: store));
@@ -241,7 +242,11 @@ class _AppShellState extends State<AppShell> {
       case AppPage.privacy:
         return Privacy(store: widget.store, back: () => go(AppPage.home));
       case AppPage.dataSources:
-        return DataSources(back: () => go(AppPage.home));
+        return DataSources(
+          store: widget.store,
+          back: () => go(AppPage.home),
+          resetDone: () => go(AppPage.welcome),
+        );
       case AppPage.recovery:
         return Recovery(store: widget.store, done: () => go(AppPage.welcome));
     }
@@ -296,70 +301,153 @@ class Setup extends StatelessWidget {
   final SessionStore store;
   final Future<void> Function() done;
   final VoidCallback? back;
-  static const countries = {
-    'US': 'United States',
-    'CA': 'Canada',
-    'BE': 'Belgium',
-    'NL': 'Netherlands',
-    'DK': 'Denmark',
-    'NO': 'Norway',
-    'SE': 'Sweden',
-    'DE': 'Germany',
-    'FR': 'France',
-    'ES': 'Spain',
-    'IT': 'Italy',
-    'AT': 'Austria',
-    'GB': 'United Kingdom',
-    'IE': 'Ireland',
-    'AU': 'Australia',
-  };
+  Future<List<Map<String, Object?>>> _countries() async {
+    final manifest =
+        (jsonDecode(await rootBundle.loadString('assets/data/manifest.json'))
+                as Map)
+            .cast<String, Object?>();
+    return (manifest['countries'] as List)
+        .cast<Map>()
+        .map((entry) => entry.cast<String, Object?>())
+        .where((entry) => entry['available'] != false)
+        .toList();
+  }
+
   @override
-  Widget build(BuildContext context) => Shell(
-    back: back,
-    child: ListView(
-      children: [
-        Text(
-          'Choose your name pool',
-          style: Theme.of(
-            context,
-          ).textTheme.headlineMedium!.copyWith(fontWeight: FontWeight.w800),
-        ),
-        Text(
-          'Each selected country contributes equally. Latest 10 complete years · 150 names per category.',
-        ),
-        const SizedBox(height: 18),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: countries.entries
-              .map(
-                (entry) => FilterChip(
-                  label: Text(entry.value),
-                  selected: store.countries.contains(entry.key),
-                  onSelected: (_) => store.toggleCountry(entry.key),
+  Widget build(
+    BuildContext context,
+  ) => FutureBuilder<List<Map<String, Object?>>>(
+    future: _countries(),
+    builder: (context, snapshot) => Shell(
+      back: back,
+      child: !snapshot.hasData
+          ? const Center(child: CircularProgressIndicator())
+          : ListView(
+              children: [
+                Text(
+                  'Choose where your names come from',
+                  style: Theme.of(context).textTheme.headlineMedium!.copyWith(
+                    fontWeight: FontWeight.w800,
+                  ),
                 ),
-              )
-              .toList(),
-        ),
-        const SizedBox(height: 22),
-        const Text(
-          'Names to explore',
-          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-        ),
-        ...NameCategory.values.map(
-          (category) => CheckboxListTile(
-            value: store.categories.contains(category),
-            onChanged: (_) => store.toggleCategory(category),
-            title: Text(category == NameCategory.girls ? 'Girls' : 'Boys'),
-          ),
-        ),
-        FilledButton(
-          onPressed: done,
-          child: Text(
-            store.hasSession ? 'Save selection' : 'Create private session',
-          ),
-        ),
-      ],
+                Text(
+                  'Put the countries that matter most to you near the top. We use this order to shape your name mix.',
+                ),
+                const SizedBox(height: 18),
+                Text(
+                  '${store.countryPriority.length} countries selected',
+                  style: const TextStyle(fontWeight: FontWeight.w700),
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    TextButton(
+                      onPressed: () => store.selectAllCountries(
+                        snapshot.data!.map((e) => e['code']! as String),
+                      ),
+                      child: const Text('Select all'),
+                    ),
+                    TextButton(
+                      onPressed: store.countryPriority.isEmpty
+                          ? null
+                          : store.clearCountries,
+                      child: const Text('Clear'),
+                    ),
+                  ],
+                ),
+                if (store.countryPriority.isNotEmpty) ...[
+                  const Text(
+                    'Your priorities',
+                    style: TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                  ReorderableListView.builder(
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    itemCount: store.countryPriority.length,
+                    onReorderItem: store.reorderCountries,
+                    itemBuilder: (context, index) {
+                      final code = store.countryPriority[index];
+                      final entry = snapshot.data!.firstWhere(
+                        (e) => e['code'] == code,
+                        orElse: () => {
+                          'code': code,
+                          'display_name': countryDisplayName(code),
+                        },
+                      );
+                      return ListTile(
+                        key: ValueKey(code),
+                        leading: CircleAvatar(
+                          backgroundColor: Palette.blush,
+                          foregroundColor: Palette.wine,
+                          child: Text('${index + 1}'),
+                        ),
+                        title: Text(
+                          entry['display_name'] as String? ??
+                              countryDisplayName(code),
+                        ),
+                        trailing: const Icon(Icons.drag_handle),
+                        onTap: () => store.toggleCountry(code),
+                      );
+                    },
+                  ),
+                ],
+                const SizedBox(height: 12),
+                const Text(
+                  'Other countries',
+                  style: TextStyle(fontWeight: FontWeight.w700),
+                ),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: snapshot.data!
+                      .where((e) => !store.countryPriority.contains(e['code']))
+                      .map(
+                        (entry) => ActionChip(
+                          label: Text(entry['display_name'] as String),
+                          onPressed: () =>
+                              store.toggleCountry(entry['code']! as String),
+                        ),
+                      )
+                      .toList(),
+                ),
+                const SizedBox(height: 22),
+                const Text(
+                  'Names to explore',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                ),
+                Wrap(
+                  spacing: 10,
+                  children: NameCategory.values
+                      .map(
+                        (category) => ChoiceChip(
+                          label: Padding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 18,
+                              vertical: 8,
+                            ),
+                            child: Text(
+                              category == NameCategory.girls ? 'Girls' : 'Boys',
+                            ),
+                          ),
+                          selected: store.categories.contains(category),
+                          onSelected: (_) => store.toggleCategory(category),
+                        ),
+                      )
+                      .toList(),
+                ),
+                FilledButton(
+                  onPressed:
+                      store.countryPriority.isEmpty || store.categories.isEmpty
+                      ? null
+                      : done,
+                  child: Text(
+                    store.hasSession
+                        ? 'Save selection'
+                        : 'Create private session',
+                  ),
+                ),
+              ],
+            ),
     ),
   );
 }
@@ -476,7 +564,7 @@ class _PairAcceptState extends State<PairAccept> {
                     ),
                     const SizedBox(height: 6),
                     Text(
-                      'Countries: ${widget.store.countries.map((code) => Setup.countries[code] ?? code).join(', ')}',
+                      'Countries: ${widget.store.countryPriority.map(countryDisplayName).join(', ')}',
                     ),
                     Text(
                       'Categories: ${widget.store.categories.map((category) => category == NameCategory.girls ? 'Girls' : 'Boys').join(', ')}',
@@ -791,7 +879,7 @@ class Home extends StatelessWidget {
         const SizedBox(height: 12),
         for (final category in NameCategory.values.where(
           store.categories.contains,
-        ))
+        )) ...[
           FilledButton(
             onPressed: store.remaining(category).isEmpty
                 ? null
@@ -806,17 +894,21 @@ class Home extends StatelessWidget {
               'Continue choosing ${category == NameCategory.girls ? 'girl' : 'boy'} names',
             ),
           ),
+          const SizedBox(height: 12),
+        ],
         if (store.choosingDone)
           OutlinedButton(
             onPressed: () => go(AppPage.sync),
             child: const Text('Synchronize choices'),
           ),
-        if (store.canEditSelection)
+        if (store.canEditSelection) ...[
           OutlinedButton.icon(
             onPressed: editSelection,
             icon: const Icon(Icons.tune),
             label: const Text('Adjust countries and name types'),
           ),
+          const SizedBox(height: 12),
+        ],
         if (store.partnerVotesReceived)
           FilledButton.tonalIcon(
             onPressed: () => go(AppPage.shortlist),
@@ -912,7 +1004,7 @@ class _ChoosingState extends State<Choosing> {
     HapticFeedback.selectionClick();
     SystemSound.play(SystemSoundType.click);
     await Future<void>.delayed(const Duration(seconds: 1));
-    await widget.store.vote(vote);
+    await widget.store.vote(vote, category: widget.category);
     if (mounted) {
       setState(() {
         _slide = Offset.zero;
@@ -1910,8 +2002,15 @@ class Privacy extends StatelessWidget {
 }
 
 class DataSources extends StatelessWidget {
-  const DataSources({super.key, required this.back});
+  const DataSources({
+    super.key,
+    required this.store,
+    required this.back,
+    required this.resetDone,
+  });
+  final SessionStore store;
   final VoidCallback back;
+  final VoidCallback resetDone;
 
   Future<Map<String, Object?>> _manifest() async {
     final text = await rootBundle.loadString('assets/data/manifest.json');
@@ -1933,7 +2032,6 @@ class DataSources extends StatelessWidget {
           return const Center(child: CircularProgressIndicator());
         }
         final manifest = snapshot.data!;
-        final fixture = manifest['contains_fixture_coverage'] == true;
         final countries = (manifest['countries'] as List).cast<Map>();
         return ListView(
           children: [
@@ -1944,20 +2042,22 @@ class DataSources extends StatelessWidget {
               ).textTheme.headlineMedium!.copyWith(fontWeight: FontWeight.w800),
             ),
             const SizedBox(height: 8),
-            Text(
-              fixture
-                  ? 'This build includes some fixture data. It is not ready for release use.'
-                  : 'All listed data is bundled with this app and available offline.',
+            const Text(
+              'All available data is bundled with this app and available offline.',
             ),
             const SizedBox(height: 12),
             ...countries.map((entry) {
               final country = entry.cast<String, Object?>();
               final years = (country['covered_years'] as List).join('–');
+              final available = country['available'] != false;
               return Card(
                 child: ListTile(
-                  title: Text(country['code']! as String),
+                  title: Text(
+                    country['display_name'] as String? ??
+                        country['code']! as String,
+                  ),
                   subtitle: Text(
-                    '${country['provider']} · $years\n${country['coverage_limitations']}${country['provider'].toString().contains('fixture') ? ' · Fixture' : ''}',
+                    '${available ? years : 'Unavailable'} · ${country['provider']}\n${country['coverage_limitations']}',
                   ),
                   isThreeLine: true,
                   trailing: const Icon(Icons.info_outline),
@@ -1969,6 +2069,38 @@ class DataSources extends StatelessWidget {
               'Source licensing and redistribution remain under review.',
               style: TextStyle(fontStyle: FontStyle.italic),
             ),
+            if (store.hasSession && !store.hasPartner) ...[
+              const SizedBox(height: 28),
+              OutlinedButton.icon(
+                icon: const Icon(Icons.restart_alt),
+                label: const Text('Reset this unpaired session'),
+                onPressed: () async {
+                  final confirmed = await showDialog<bool>(
+                    context: context,
+                    builder: (context) => AlertDialog(
+                      title: const Text('Reset this session?'),
+                      content: const Text(
+                        'This removes your local choices and starts a fresh private session. A paired session cannot be reset here.',
+                      ),
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.pop(context, false),
+                          child: const Text('Keep session'),
+                        ),
+                        FilledButton(
+                          onPressed: () => Navigator.pop(context, true),
+                          child: const Text('Reset session'),
+                        ),
+                      ],
+                    ),
+                  );
+                  if (confirmed == true) {
+                    await store.reset();
+                    resetDone();
+                  }
+                },
+              ),
+            ],
           ],
         );
       },

@@ -1,6 +1,6 @@
 # QR protocol
 
-Version 4 invites contain the dataset hash, countries, categories, deterministic seed, session ID, creator participant ID, and random 256-bit session secret. A displayed invite is an out-of-band pairing ceremony: anyone who scans it can join, so it must be regenerated before voting if exposed.
+Version 5 invites contain the dataset hash, ordered country priority, categories, deterministic seed, session ID, creator participant ID, and random 256-bit session secret. A displayed invite is an out-of-band pairing ceremony: anyone who scans it can join, so it must be regenerated before voting if exposed. Priority order is shared before either phone builds candidates, so paired phones cannot silently create divergent pools.
 
 Post-pairing vote updates are base64url JSON QR envelopes encrypted with AES-256-GCM. The associated data binds protocol version, session ID, event type, sender, and sequence number. The envelope carries an authenticated sender participant ID, nonce, tag, and ciphertext; it never puts votes in plaintext. The receiver checks framing, version/session, authentication, sender-scoped replay, schema, and candidate IDs before persisting the update.
 
@@ -12,7 +12,7 @@ After an invite is scanned, the joining phone displays an encrypted `pair_accept
 
 ## Compatibility
 
-The active wire format is version 4. It authenticates the source participant
+The active wire format is version 5. It authenticates the source participant
 identifier as AES-GCM associated data, so replay detection is scoped to a sender
 and an attacker cannot relabel an encrypted packet. Version-1, version-2, and version-3
 pairing invitations are detected and rejected with a renewal message; those

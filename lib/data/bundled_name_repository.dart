@@ -108,18 +108,27 @@ class BundledNameRepository {
   static const _databaseFileName = 'namethatbaby-names-v3.sqlite';
 
   Future<List<Candidate>> candidatePool({
-    required Set<String> countries,
+    required List<String> countryPriority,
     required Set<NameCategory> categories,
     required int seed,
-    int target = 150,
+    int target = 200,
   }) async {
     final database = await _open();
     try {
       final candidates = <Candidate>[];
       for (final category in categories) {
-        final rankings = await _rankings(database, countries, category);
+        final rankings = await _rankings(
+          database,
+          countryPriority.toSet(),
+          category,
+        );
         candidates.addAll(
-          equalCountryPool(rankings: rankings, seed: seed, target: target),
+          weightedCountryPool(
+            rankings: rankings,
+            countryPriority: countryPriority,
+            seed: seed,
+            target: target,
+          ),
         );
       }
       return candidates;

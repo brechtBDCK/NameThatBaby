@@ -204,13 +204,35 @@ List<Candidate> rankCountryDecade(Iterable<AnnualNameRanking> observations) {
   ];
 }
 
-List<Candidate> equalCountryPool({
+/// Builds a varied, deterministic pool from ordered country preferences.
+///
+/// A country's positional weight is `1 / sqrt(position)`, normalized across
+/// the selected list.  A name receives the weighted sum of its country
+/// popularity (`1 / log2(rank + 1)`) plus 0.10 for every extra country in
+/// which it appears.  Each country reserves up to 20 unique entries before
+/// the remaining slots are filled by relevance, so a lower priority never
+/// disappears behind a large top-country ranking.
+List<Candidate> weightedCountryPool({
   required Map<String, List<Candidate>> rankings,
+  required List<String> countryPriority,
   required int seed,
-  int target = 150,
+  int target = 200,
   bool shuffle = true,
 }) {
-  final countries = rankings.keys.toList()..sort();
+  final countries = [
+    ...countryPriority.where(rankings.containsKey),
+    ...(rankings.keys.where((code) => !countryPriority.contains(code)).toList()
+      ..sort()),
+  ];
+  final rawWeights = <String, double>{
+    for (var index = 0; index < countries.length; index++)
+      countries[index]: 1 / sqrt(index + 1),
+  };
+  final totalWeight = rawWeights.values.fold<double>(0, (a, b) => a + b);
+  final weights = {
+    for (final entry in rawWeights.entries)
+      entry.key: entry.value / totalWeight,
+  };
   final appearances = <String, List<CountryPopularity>>{};
   for (final entry in rankings.entries) {
     for (final candidate in entry.value) {
@@ -222,40 +244,44 @@ List<Candidate> equalCountryPool({
           .addAll(candidate.popularity);
     }
   }
-  final positions = <String, int>{for (final country in countries) country: 0};
   final seen = <String>{};
   final selected = <Candidate>[];
-  while (selected.length < target) {
-    var progressed = false;
-    for (final country in countries) {
-      final names = rankings[country]!;
-      while (positions[country]! < names.length) {
-        final candidate = names[positions[country]!];
-        positions[country] = positions[country]! + 1;
-        if (seen.add(
-          '${candidate.category.name}:${normalizeName(candidate.name)}',
-        )) {
-          selected.add(candidate);
-          progressed = true;
-          break;
-        }
+  final reserve = min(20, max(1, target ~/ max(1, countries.length)));
+  for (final country in countries) {
+    var contributed = 0;
+    for (final candidate in rankings[country]!) {
+      if (contributed == reserve || selected.length == target) break;
+      if (seen.add(
+        '${candidate.category.name}:${normalizeName(candidate.name)}',
+      )) {
+        selected.add(candidate);
+        contributed++;
       }
-      if (selected.length == target) break;
     }
-    if (!progressed) break;
   }
-  final combined = selected.map((candidate) {
-    final popularity =
-        appearances['${candidate.category.name}:${normalizeName(candidate.name)}']!
-          ..sort((left, right) => left.country.compareTo(right.country));
-    // A second selected-country appearance is useful context, but less
-    // important than remaining near the top of any individual country list.
+  final all = <Candidate>[];
+  final allSeen = <String>{};
+  for (final country in countries) {
+    for (final candidate in rankings[country]!) {
+      if (allSeen.add(
+        '${candidate.category.name}:${normalizeName(candidate.name)}',
+      )) {
+        all.add(candidate);
+      }
+    }
+  }
+  Candidate combine(Candidate candidate) {
+    final popularity = [
+      ...appearances['${candidate.category.name}:${normalizeName(candidate.name)}']!,
+    ]..sort((left, right) => left.country.compareTo(right.country));
     final relevance =
         popularity.fold<double>(
           0,
-          (total, value) => total + 1 / (log(value.decadeRank + 1) / ln2),
+          (total, value) =>
+              total +
+              (weights[value.country] ?? 0) / (log(value.decadeRank + 1) / ln2),
         ) +
-        (popularity.length - 1) * .25;
+        (popularity.length - 1) * .10;
     return Candidate(
       id: candidate.id,
       name: candidate.name,
@@ -264,7 +290,9 @@ List<Candidate> equalCountryPool({
       combinedPoolPosition: 0,
       combinedRelevanceScore: relevance,
     );
-  }).toList();
+  }
+
+  final combined = all.map(combine).toList();
   combined.sort((left, right) {
     final score = right.combinedRelevanceScore.compareTo(
       left.combinedRelevanceScore,
@@ -273,20 +301,52 @@ List<Candidate> equalCountryPool({
         ? score
         : normalizeName(left.name).compareTo(normalizeName(right.name));
   });
+  for (final candidate in combined) {
+    if (selected.length == target) break;
+    if (seen.add(
+      '${candidate.category.name}:${normalizeName(candidate.name)}',
+    )) {
+      selected.add(candidate);
+    }
+  }
   final positioned = [
-    for (var index = 0; index < combined.length; index++)
+    for (var index = 0; index < selected.length; index++)
       Candidate(
-        id: combined[index].id,
-        name: combined[index].name,
-        category: combined[index].category,
-        popularity: combined[index].popularity,
+        id: combine(selected[index]).id,
+        name: combine(selected[index]).name,
+        category: combine(selected[index]).category,
+        popularity: combine(selected[index]).popularity,
         combinedPoolPosition: index + 1,
-        combinedRelevanceScore: combined[index].combinedRelevanceScore,
+        combinedRelevanceScore: combine(selected[index]).combinedRelevanceScore,
       ),
   ];
-  if (shuffle) positioned.shuffle(Random(seed));
+  positioned.sort(
+    (a, b) => b.combinedRelevanceScore.compareTo(a.combinedRelevanceScore),
+  );
+  if (shuffle) {
+    final random = Random(seed);
+    for (var start = 0; start < positioned.length; start += 25) {
+      final end = min(start + 25, positioned.length);
+      final band = positioned.sublist(start, end)..shuffle(random);
+      positioned.replaceRange(start, end, band);
+    }
+  }
   return positioned;
 }
+
+/// Backwards-compatible entry point for tests and older callers.
+List<Candidate> equalCountryPool({
+  required Map<String, List<Candidate>> rankings,
+  required int seed,
+  int target = 200,
+  bool shuffle = true,
+}) => weightedCountryPool(
+  rankings: rankings,
+  countryPriority: rankings.keys.toList()..sort(),
+  seed: seed,
+  target: target,
+  shuffle: shuffle,
+);
 
 class Pairing {
   const Pairing(this.left, this.right);

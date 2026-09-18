@@ -14,7 +14,7 @@ import 'qr_protocol.dart';
 
 typedef CandidateLoader =
     Future<List<Candidate>> Function(
-      Set<String> countries,
+      List<String> countryPriority,
       Set<NameCategory> categories,
       int seed,
     );
@@ -180,13 +180,16 @@ class SessionStore extends ChangeNotifier {
   }
 
   static const _secretKey = 'namethatbaby.session.secret.v1';
-  static const _stateVersion = 3;
+  static const _stateVersion = 4;
   final SessionSecretStore _secrets;
   late final SessionStateStore _state;
   late final LegacySessionStateStore _legacyState;
   late final CandidateLoader? _candidateLoader;
   final String datasetHash;
-  final Set<String> countries = {'US', 'FR', 'NL'};
+
+  /// Ordered shared configuration; never infer priority from Set iteration.
+  final List<String> countryPriority = ['FR', 'CA', 'BE'];
+  Set<String> get countries => countryPriority.toSet();
   final Set<NameCategory> categories = {NameCategory.girls, NameCategory.boys};
   final Map<int, VoteValue> votes = {};
   final Map<int, VoteValue> partnerVotes = {};
@@ -281,9 +284,15 @@ class SessionStore extends ChangeNotifier {
       encoded ??= await _legacyState.read();
       if (encoded == null) return;
       final state = (jsonDecode(encoded) as Map).cast<String, Object?>();
-      countries
+      final storedPriority = (state['countryPriority'] as List?)
+          ?.cast<String>();
+      final migratedCountries =
+          storedPriority ??
+          ((state['countries'] as List).cast<String>().toSet().toList()
+            ..sort());
+      countryPriority
         ..clear()
-        ..addAll((state['countries'] as List).cast<String>());
+        ..addAll(migratedCountries.toSet());
       categories
         ..clear()
         ..addAll(
@@ -386,10 +395,10 @@ class SessionStore extends ChangeNotifier {
   }
 
   Future<void> toggleCountry(String code) async {
-    if (countries.contains(code) && countries.length > 1) {
-      countries.remove(code);
+    if (countryPriority.contains(code) && countryPriority.length > 1) {
+      countryPriority.remove(code);
     } else {
-      countries.add(code);
+      countryPriority.add(code);
     }
     if (hasSession) await _loadCandidates();
     await _changed();
@@ -405,8 +414,29 @@ class SessionStore extends ChangeNotifier {
     await _changed();
   }
 
-  Future<void> vote(VoteValue value) async {
-    final candidate = current;
+  Future<void> reorderCountries(int oldIndex, int newIndex) async {
+    final country = countryPriority.removeAt(oldIndex);
+    countryPriority.insert(newIndex, country);
+    if (hasSession) await _loadCandidates();
+    await _changed();
+  }
+
+  Future<void> selectAllCountries(Iterable<String> available) async {
+    for (final country in available.toList()..sort()) {
+      if (!countryPriority.contains(country)) countryPriority.add(country);
+    }
+    if (hasSession) await _loadCandidates();
+    await _changed();
+  }
+
+  Future<void> clearCountries() async {
+    if (countryPriority.isEmpty) return;
+    countryPriority.clear();
+    await _changed();
+  }
+
+  Future<void> vote(VoteValue value, {NameCategory? category}) async {
+    final candidate = currentFor(category);
     if (candidate == null) return;
     votes[candidate.id] = value;
     history.add(candidate.id);
@@ -620,7 +650,7 @@ class SessionStore extends ChangeNotifier {
       'session': sessionId,
       'creator': localParticipantId,
       'hash': datasetHash,
-      'countries': countries.toList()..sort(),
+      'countries': countryPriority,
       'categories': categories.map((category) => category.name).toList(),
       'seed': seed,
       'secret': base64Url.encode(_secret!),
@@ -652,7 +682,7 @@ class SessionStore extends ChangeNotifier {
     localParticipantId = await QrProtocol.newIdentifier();
     partnerParticipantId = creator;
     seed = invite['seed'] as int;
-    countries
+    countryPriority
       ..clear()
       ..addAll((invite['countries'] as List).cast<String>());
     categories
@@ -985,9 +1015,9 @@ class SessionStore extends ChangeNotifier {
 
   Future<void> reset() async {
     restoreError = null;
-    countries
+    countryPriority
       ..clear()
-      ..addAll({'US', 'FR', 'NL'});
+      ..addAll(['FR', 'CA', 'BE']);
     categories
       ..clear()
       ..addAll(NameCategory.values);
@@ -1046,7 +1076,7 @@ class SessionStore extends ChangeNotifier {
   Future<void> _loadCandidates() async {
     final loader = _candidateLoader;
     if (loader == null) return;
-    final loaded = await loader(countries, categories, seed);
+    final loaded = await loader(countryPriority, categories, seed);
     if (loaded.isEmpty) {
       throw StateError('The bundled data has no names for this selection.');
     }
@@ -1186,7 +1216,8 @@ class SessionStore extends ChangeNotifier {
   Future<void> _persist() {
     final encoded = jsonEncode({
       'stateVersion': _stateVersion,
-      'countries': countries.toList(),
+      'countries': countryPriority,
+      'countryPriority': countryPriority,
       'categories': categories.map((value) => value.name).toList(),
       'votes': votes.map((key, value) => MapEntry('$key', value.name)),
       'partnerVotes': partnerVotes.map(

@@ -29,11 +29,15 @@ void main() {
   });
 
   testWidgets('bundled data coverage is available locally', (tester) async {
-    await tester.pumpWidget(MaterialApp(home: DataSources(back: () {})));
+    await tester.pumpWidget(
+      MaterialApp(
+        home: DataSources(store: SessionStore(), back: () {}, resetDone: () {}),
+      ),
+    );
     await tester.pumpAndSettle();
 
     expect(find.text('Name data & coverage'), findsOneWidget);
-    expect(find.textContaining('fixture data'), findsOneWidget);
+    expect(find.textContaining('available data'), findsOneWidget);
   });
 
   testWidgets('choosing card supports a left swipe for No', (tester) async {

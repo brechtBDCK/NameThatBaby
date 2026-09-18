@@ -70,7 +70,7 @@ void main() {
     );
     expect(pool.map((candidate) => candidate.name), ['Ada', 'Bea']);
   });
-  test('country pool is capped at 150 and deterministic', () {
+  test('country pool is capped at 200 and deterministic', () {
     List<Candidate> ranked(String country, int offset) => [
       for (var rank = 1; rank <= 200; rank++)
         candidate(
@@ -85,19 +85,48 @@ void main() {
     final first = equalCountryPool(rankings: rankings, seed: 42);
     final second = equalCountryPool(rankings: rankings, seed: 42);
 
-    expect(first, hasLength(150));
+    expect(first, hasLength(200));
     expect(
       first.map((candidate) => candidate.id),
       second.map((candidate) => candidate.id),
     );
-    expect(
-      first.where((candidate) => candidate.countries.single == 'FR'),
-      hasLength(75),
+    final french = first
+        .where((candidate) => candidate.countries.single == 'FR')
+        .length;
+    final american = first
+        .where((candidate) => candidate.countries.single == 'US')
+        .length;
+    expect(french, greaterThan(american));
+    expect(american, greaterThanOrEqualTo(20));
+  });
+  test('priority affects relevance while reserving lower-country variety', () {
+    List<Candidate> names(String country, int base) => [
+      for (var rank = 1; rank <= 80; rank++)
+        candidate(
+          base + rank,
+          '$country-$rank',
+          NameCategory.girls,
+          country,
+          rank,
+        ),
+    ];
+    final rankings = {'A': names('A', 0), 'B': names('B', 100)};
+    final pool = weightedCountryPool(
+      rankings: rankings,
+      countryPriority: ['A', 'B'],
+      seed: 3,
+      shuffle: false,
+      target: 60,
     );
     expect(
-      first.where((candidate) => candidate.countries.single == 'US'),
-      hasLength(75),
+      pool.where((entry) => entry.countries.single == 'A').length,
+      greaterThan(20),
     );
+    expect(
+      pool.where((entry) => entry.countries.single == 'B').length,
+      greaterThanOrEqualTo(20),
+    );
+    expect(pool.first.countries.single, 'A');
   });
   test('decade ranking uses score then the specified tie breakers', () {
     final ranked = rankCountryDecade([
@@ -152,7 +181,7 @@ void main() {
 
       expect(pool, hasLength(1));
       expect(pool.single.countries, ['BE', 'FR', 'NL']);
-      expect(pool.single.combinedRelevanceScore, greaterThan(1));
+      expect(pool.single.combinedRelevanceScore, greaterThan(0));
       expect(
         pool.single.popularityLabel,
         'Popular across 3 selected countries',

@@ -1,7 +1,8 @@
 # Deferred device verification
 
-No physical device was connected during source verification. Every item below
-is **NOT RUN — device unavailable** until manually checked. Do not record QR
+No device result has been recorded by this checkout yet. Android/ADB access was
+attempted on 2026-09-18 but the sandbox could not open the ADB listener, so the
+checks below remain **NOT RUN — ADB unavailable in this environment**. Do not record QR
 payloads, votes, names, keys, or screenshots containing them in Git.
 
 ## First command when an Android phone is available

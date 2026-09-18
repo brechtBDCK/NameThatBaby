@@ -123,6 +123,18 @@ void main() {
     expect(resumed.history, [first.id]);
   });
 
+  test('a category-specific vote advances that category only', () async {
+    final store = testStore();
+    final girl = store.currentFor(NameCategory.girls)!;
+    final boy = store.currentFor(NameCategory.boys)!;
+
+    await store.vote(VoteValue.yes, category: NameCategory.boys);
+
+    expect(store.votes[boy.id], VoteValue.yes);
+    expect(store.votes[girl.id], isNull);
+    expect(store.currentFor(NameCategory.boys)!.id, isNot(boy.id));
+  });
+
   test('queued persistence retains the newest Face-off state', () async {
     final state = DelayedState();
     final secrets = MemorySecrets();
